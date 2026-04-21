@@ -1,9 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <nifti/nifti1_io.h> 
 
 #include "config/config_loader.h"
 #include "datasets/datasets.h"
 #include "utils.h"
+#include "encoders/image_encoders.h"
 
 /* [PUBLIC] */
 GPU_dataset_t* allocate_dataset_str(size_t n_samples, size_t n_features, size_t n_classes, size_t n_spikes){
@@ -124,6 +127,77 @@ GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *lab
     // return dataset
     return dataset;
 }
+//TODO: comprobar que lo hace como lo han pedido los teachers:
+    // array de arrays, con info del mismo pixel durante los timesteps (recuerda el dibujo de la arbela con el pixel de la esquina de TODAS las imagenes)
+    // numero de spike trains = 768 (dimension de imagen)
+    // codificacion: 0 (0), 1 (128), 2 (255)
+GPU_dataset_t* load_dataset_from_nii(const char *nifti_filename, simulation_configuration_t *conf) {
+    int width, height, num_images;
+    
+    unsigned char* image_buffer = read_stimuli(nifti_filename, &width, &height, &num_images);
+
+    size_t num_pixels = (size_t)width * (size_t)height;
+    size_t total_images = (size_t)num_images;
+    if (conf->n_samples > 0 && conf->n_samples < total_images) {
+        printf(" > Aviso: El NIfTI contiene %zu imágenes, limitando la carga a conf->n_samples=%zu.\n", total_images, conf->n_samples);
+        total_images = conf->n_samples;
+    } else {
+        printf(" > NIfTI cargado con %zu imágenes.\n", total_images);
+    }
+
+    size_t total_spikes = 0;
+
+    // Pasada 1: Contar los spikes totales para poder hacer un único allocate de memoria
+    for (size_t i = 0; i < total_images; ++i) {
+        for (size_t j = 0; j < num_pixels; ++j) {
+            int pixel_value = image_buffer[i * num_pixels + j];
+            size_t num_spikes = (size_t)((pixel_value / 255.0) * 10);
+            total_spikes += num_spikes;
+        }
+    }
+
+    // Reservar toda la estructura del dataset junta
+    GPU_dataset_t *dataset = allocate_dataset_str(total_images, num_pixels, conf->n_classes, total_spikes);
+    
+    if (total_spikes > 0 && dataset->spikes == NULL) {
+        fprintf(stderr, "\nERROR FATAL: No hay suficiente RAM. Malloc falló al intentar reservar memoria para %zu spikes.\n", total_spikes);
+        exit(1);
+    }
+    
+    if (total_images > 0 && num_pixels > 0 && (dataset->n_spikes_per_feature == NULL || dataset->feature_offset == NULL || dataset->freq == NULL || dataset->first_spk == NULL)) {
+        fprintf(stderr, "\nERROR FATAL: No hay suficiente RAM. Malloc falló al intentar reservar memoria para los metadatos.\n");
+        exit(1);
+    }
+
+    // Pasada 2: Rellenar la estructura con los instantes de los spikes
+    size_t spike_idx = 0;
+    for (size_t i = 0; i < total_images; ++i) {
+        dataset->sample_offset[i] = spike_idx;
+        for (size_t j = 0; j < num_pixels; ++j) {
+            dataset->feature_offset[i * num_pixels + j] = spike_idx;
+            
+            int pixel_value = image_buffer[i * num_pixels + j];
+            size_t num_spikes = (size_t)((pixel_value / 255.0) * 10);
+            dataset->n_spikes_per_feature[i * num_pixels + j] = num_spikes;
+            
+            for (size_t k = 0; k < num_spikes; ++k) {
+                dataset->spikes[spike_idx++] = k * 10; // Ejemplo: spikes cada 10ms
+            }
+
+            if (num_spikes > 0) {
+                dataset->freq[i * num_pixels + j] = conf->max_input_spikes / num_spikes;
+                dataset->first_spk[i * num_pixels + j] = 0; // k=0 -> 0 * 10 = 0
+            } else {
+                dataset->freq[i * num_pixels + j] = 0;
+                dataset->first_spk[i * num_pixels + j] = 0;
+            }
+        }
+    }
+
+    free(image_buffer);
+
+    return dataset;
+}
 
 double get_dataset_size(GPU_dataset_t *dataset){
     
@@ -168,3 +242,54 @@ void print_dataset(GPU_dataset_t *dataset){
         }
     }
 }
+
+
+unsigned char* read_stimuli(const char *nifti_filename, int *width, int *height, int *num_images){
+  
+    // Carga la imagen NIfTI
+    nifti_image *nim = nifti_image_read(nifti_filename, 1);
+    if (nim == NULL) {
+        fprintf(stderr, "Error: No se puede leer el fichero NIfTI %s\n", nifti_filename);
+        exit(1);
+    }
+
+    // Obtiene las dimensiones
+    *width = nim->nx;
+    *height = nim->ny;
+
+    // Calcular num_images desde el volumen total para prevenir fallos si el NIfTI 
+    // almacena el tiempo en dim 4 en lugar de dim 3
+    long long total_voxels = nim->nvox;
+    if (total_voxels > 0 && nim->nx > 0 && nim->ny > 0) {
+        *num_images = (int)(total_voxels / (nim->nx * nim->ny));
+    } else {
+        // Fallback original
+        *num_images = nim->nz; 
+    }
+
+    // Comprueba el tipo de datos
+    if (nim->datatype != NIFTI_TYPE_UINT8) {
+        fprintf(stderr, "Error: Tipo de datos no soportado %d\n", nim->datatype);
+        nifti_image_free(nim);
+        exit(1);
+    }
+
+    // Obtiene el tamaño de los datos
+    size_t data_size = nim->nvox * nim->nbyper;
+    unsigned char *data = (unsigned char*)malloc(data_size);
+    if (data == NULL) {
+        fprintf(stderr, "Error: No se puede reservar memoria para los datos de la imagen\n");
+        nifti_image_free(nim);
+        exit(1);
+    }
+
+    // Copia los datos
+    memcpy(data, nim->data, data_size);
+
+    // Libera la imagen nifti
+    nifti_image_free(nim);
+
+    return data;
+}
+
+

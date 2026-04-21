@@ -17,8 +17,8 @@ CXX  = g++
 NVCC = nvcc
 
 # Flags
-CC_FLAGS  = -g -O0 -fopenmp
-CXX_FLAGS = -g -O0 -fopenmp
+CC_FLAGS  = -g -O0 -fopenmp -I/usr/include/nifti
+CXX_FLAGS = -g -O0 -fopenmp -I/usr/include/nifti
 
 NVCC_FLAGS = -g -O0 --ptxas-options=-v -rdc=true -Xcompiler "-fopenmp -DCUDA"
 
@@ -47,6 +47,7 @@ COMMON_OBJS = \
 $(OBJ_DIR)/main.o \
 $(OBJ_DIR)/config_loader.o \
 $(OBJ_DIR)/datasets.o \
+$(OBJ_DIR)/image_encoders.o \
 $(OBJ_DIR)/snn.o \
 $(OBJ_DIR)/neuron_models.o \
 $(OBJ_DIR)/lif_neuron.o \
@@ -79,12 +80,12 @@ ifeq ($(USE_CUDA),1)
 	CC_FLAGS += -DCUDA
 	CXX_FLAGS += -DCUDA
 	LINKER = $(NVCC)
-	LINK_FLAGS = $(NVCC_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LIBS) -Xcompiler -fopenmp
+	LINK_FLAGS = $(NVCC_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LIBS) -Xcompiler -fopenmp -lniftiio -lznz
 else
 	CC_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
 	CXX_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
 	LINKER = $(CXX)
-	LINK_FLAGS = -fopenmp -lm
+	LINK_FLAGS = -fopenmp -lm -lniftiio -lznz
 
 	ifeq ($(USE_AVX512),1)
 		CC_FLAGS  += -DAVX512 -mavx512f -mavx512bw -mavx512vl -mfma -march=skylake-avx512
@@ -135,6 +136,10 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/simulations/%.c
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/training_rules/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/encoders/%.c
 	mkdir -p $(OBJ_DIR)
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
