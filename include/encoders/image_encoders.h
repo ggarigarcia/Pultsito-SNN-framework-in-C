@@ -1,5 +1,5 @@
 #ifndef IMAGE_ENCODERS_H
-#define IMAGE_ENCODERS_H
+#define IMAGE_ENDOERS_H
 
 
 
@@ -58,14 +58,5 @@ void convert_images_to_spikes_by_poisson_distribution(image_dataset_t *spike_ima
 /// @param image_size Number of pixels into the image
 /// @param bins number of spikes (max) into each pixel spike train
 void convert_image_to_spikes_by_poisson_distribution(spike_image_t *spike_image, double *image, int image_size, int bins);
-
-/// @brief Encodes a sequence of images to spike trains.
-/// @param images_buffer The buffer containing the image data.
-/// @param width The width of the images.
-/// @param height The height of the images.
-/// @param num_images The number of images.
-/// @param n_spikes Pointer to store the total number of spikes.
-/// @return A 2D array of spike trains.
-size_t** encode_images_to_spikes(unsigned char* images_buffer, int width, int height, int num_images, size_t *n_spikes);
 
 #endif

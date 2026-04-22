@@ -37,19 +37,7 @@ typedef struct GPU_dataset_t {
 } GPU_dataset_t;
 
 
-/// @brief Allocate memory for dataset
-/// @param n_samples number of samples
-/// @param n_features number of features
-/// @param n_classes number of classes
-/// @param n_spikes number of spikes
-GPU_dataset_t* allocate_dataset_str(size_t n_samples, size_t n_features, size_t n_classes, size_t n_spikes);
-
-/// @brief Deallocate memory of the dataset
-/// @param dataset structure to deallocate
-void deallocate_dataset_str(GPU_dataset_t *dataset);
-
 /// @brief Load dataset from file
-
 /// @param file_name file name to load data from
 /// @param labels_file_name file containing the labels
 /// @param n_samples number of samples in the dataset
@@ -63,20 +51,6 @@ double get_dataset_size(GPU_dataset_t *dataset);
 /// @brief Funtiong for printing the dataset
 /// @param dataset struct storing the dataset
 void print_dataset(GPU_dataset_t *dataset);
-
-/// @brief Reads a NIFTI file and returns the image data
-/// @param nifti_filename The path to the NIFTI file
-/// @param width Pointer to store the width of the images
-/// @param height Pointer to store the height of the images
-/// @param num_images Pointer to store the number of images
-/// @return A pointer to the image data buffer
-unsigned char* read_stimuli(const char *nifti_filename, int *width, int *height, int *num_images);
-
-/// @brief Loads a dataset from a NIFTI file.
-/// @param nifti_filename The path to the NIFTI file.
-/// @param conf The simulation configuration.
-/// @return A pointer to the loaded dataset.
-GPU_dataset_t* load_dataset_from_nii(const char *nifti_filename, simulation_configuration_t *conf);
 
 #ifdef __cplusplus
 }

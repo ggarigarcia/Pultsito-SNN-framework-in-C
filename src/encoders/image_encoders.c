@@ -112,24 +112,4 @@ void convert_image_to_spikes_by_poisson_distribution(spike_image_t *spike_image,
     }
 }
 
-size_t** encode_images_to_spikes(unsigned char* images_buffer, int width, int height, int num_images, size_t *total_spikes) {
-    int image_size = width * height;
-    size_t** spike_trains = (size_t**)malloc(num_images * image_size * sizeof(size_t*));
-    *total_spikes = 0;
-
-    for (int i = 0; i < num_images; ++i) {
-        for (int j = 0; j < image_size; ++j) {
-            int pixel_value = images_buffer[i * image_size + j];
-            int num_spikes = (int)((pixel_value / 255.0) * 10); // Scale to 0-10 spikes
-            spike_trains[i * image_size + j] = (size_t*)malloc((num_spikes + 1) * sizeof(size_t));
-            spike_trains[i * image_size + j][0] = num_spikes;
-            *total_spikes += num_spikes;
-            for (int k = 0; k < num_spikes; ++k) {
-                spike_trains[i * image_size + j][k + 1] = k * 10; // Example: spikes every 10ms
-            }
-        }
-    }
-    return spike_trains;
-}
-
 

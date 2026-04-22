@@ -71,7 +71,3 @@ dkms.conf
 
 # debug information files
 *.dwo
-
-# (G)
-# datasets (terminan en .data)
-*.data 
