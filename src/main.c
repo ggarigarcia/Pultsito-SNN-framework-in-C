@@ -48,7 +48,14 @@ int main(int argc, char *argv[]) {
 
     // load dataset
     printf(" > Loading dataset... \n");
-    GPU_dataset_t *cpu_dataset = load_dataset_from_file_cpu(conf->dataset, conf->labels, conf->n_samples, conf);
+    //GPU_dataset_t *cpu_dataset = load_dataset_from_file_cpu(conf->dataset, conf->labels, conf->n_samples, conf);
+    GPU_dataset_t *cpu_dataset = load_dataset_from_nifti_cpu(conf); // TODO: only pass conf
+    if(!cpu_dataset){
+        printf(" > Error loading dataset! Exiting.\n");
+        fflush(stdout);
+        return 1;
+    }
+
     printf(" > Dataset loaded!\n");
     fflush(stdout);
 

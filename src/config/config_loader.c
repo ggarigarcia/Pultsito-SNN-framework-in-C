@@ -168,8 +168,8 @@ simulation_configuration_t* load_dataset_section_from_toml(simulation_configurat
 
     // store dataset information
     conf->labels_provided = labels_provided.u.i;
-    conf->dataset         = dataset.u.s;
-    conf->labels          = labels.u.s;
+    conf->dataset         = dataset.ok ? strdup(dataset.u.s) : NULL;
+    conf->labels          = labels.ok ? strdup(labels.u.s) : NULL;
     conf->n_samples       = (size_t)n_samples.u.i;
 
     conf->n_classes       = (size_t)n_classes.u.i;
@@ -241,17 +241,17 @@ simulation_configuration_t* load_output_section_from_toml(simulation_configurati
     }
 
     conf->store_generated_spikes   = store_generated_spikes.u.i;
-    conf->generated_spikes_file    = generated_spikes_file.u.s;
+    conf->generated_spikes_file    = generated_spikes_file.ok ? strdup(generated_spikes_file.u.s) : NULL;
 
     conf->store_execution_times    = store_execution_times.u.i;
-    conf->execution_times_file     = execution_times_file.u.s;
+    conf->execution_times_file     = execution_times_file.ok ? strdup(execution_times_file.u.s) : NULL;
 
     conf->store_n_spikes           = store_n_spikes.u.i;
-    conf->n_spikes_per_neuron_file = n_spikes_per_neuron_file.u.s;
+    conf->n_spikes_per_neuron_file = n_spikes_per_neuron_file.ok ? strdup(n_spikes_per_neuron_file.u.s) : NULL;
 
     conf->store_network            = store_network.u.i;
     if(conf->store_network == 1)
-        conf->store_network_file   = store_network_file.u.s;
+        conf->store_network_file   = store_network_file.ok ? strdup(store_network_file.u.s) : NULL;
 
     return conf;
 }
@@ -279,14 +279,14 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
     if(conf->load_network == 0){
         
         if(network_file.ok){
-            conf->network_file = network_file.u.s;
+            conf->network_file = network_file.ok ? strdup(network_file.u.s) : NULL;
         }
         else{
             printf(" > network_file for loading the general network properties not provided! Exiting.\n");
             exit(1);
         }
         if(network_neurons_file.ok){
-            conf->network_neurons_file = network_neurons_file.u.s;
+            conf->network_neurons_file = network_neurons_file.ok ? strdup(network_neurons_file.u.s) : NULL;
         }
         else{
             
@@ -294,7 +294,7 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
             exit(1);
         }
         if(network_synapses_file.ok){
-            conf->network_synapses_file = network_synapses_file.u.s;
+            conf->network_synapses_file = network_synapses_file.ok ? strdup(network_synapses_file.u.s) : NULL;
         }
         else{
             

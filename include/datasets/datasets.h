@@ -43,6 +43,10 @@ typedef struct GPU_dataset_t {
 /// @param n_samples number of samples in the dataset
 GPU_dataset_t* load_dataset_from_file_cpu(const char *file_name, const char *labels_file_name, size_t n_samples, simulation_configuration_t *conf);
 
+GPU_dataset_t* load_dataset_from_nifti_cpu(simulation_configuration_t *conf);
+
+void deallocate_dataset_str(GPU_dataset_t *dataset);
+
 /// @brief Function to get the size of the dataset in memory
 /// @param dataset dataset structure
 /// @return size in bytes

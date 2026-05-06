@@ -27,6 +27,10 @@ CUDA_INC_DIR  = -I$(CUDA_ROOT_DIR)/include
 CUDA_LIB_DIR  = -L$(CUDA_ROOT_DIR)/lib64
 CUDA_LIBS     = -lcudart
 
+# NIFTI (CPU only)
+NIFTI_INC_DIR = -I/usr/include/nifti
+NIFTI_LIBS    = -lniftiio -lnifticdf -lznz -lz
+
 # Project structure
 SRC_DIR       = src
 OBJ_DIR       = build
@@ -41,6 +45,8 @@ ifeq ($(USE_CUDA),1)
 else
 	EXE = cpu_simulator
 endif
+
+NETWORK_EXE = network_generator
 
 # Common objects
 COMMON_OBJS = \
@@ -84,7 +90,9 @@ else
 	CC_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
 	CXX_FLAGS += -ffast-math -funroll-loops -fprefetch-loop-arrays -flto -mtune=native
 	LINKER = $(CXX)
-	LINK_FLAGS = -fopenmp -lm
+	LINK_FLAGS = -fopenmp -lm $(NIFTI_LIBS)
+	CC_FLAGS += $(NIFTI_INC_DIR)
+	CXX_FLAGS += $(NIFTI_INC_DIR)
 
 	ifeq ($(USE_AVX512),1)
 		CC_FLAGS  += -DAVX512 -mavx512f -mavx512bw -mavx512vl -mfma -march=skylake-avx512
@@ -171,6 +179,10 @@ cpu:
 
 avx512:
 	$(MAKE) USE_CUDA=0 USE_AVX512=1
+
+network:
+	mkdir -p $(BIN_DIR)
+	$(CC) -I$(INC_DIR) -I$(INC_DIR_LIBS) -o $(BIN_DIR)/$(NETWORK_EXE) src/networks/snn_generator_main.c src/networks/snn_generator.c lib/toml_c/toml.c -lm
 
 # ==================================================
 # Clean
