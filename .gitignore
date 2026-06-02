@@ -71,3 +71,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+###
+.github/
+.vscode/
+*.data

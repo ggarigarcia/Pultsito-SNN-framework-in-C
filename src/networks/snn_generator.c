@@ -514,7 +514,7 @@ topology_t generate_layered_topology(generator_conf_t *conf){
     // all input neurons to all input spike trains
     for(size_t i = 0; i<n_neurons_per_layer[0]; i++){
 
-        input_neurons_per_neuron[next_neuron] = (size_t*)malloc((n_input * 2 + 1) * sizeof(size_t));
+        input_neurons_per_neuron[next_neuron] = (size_t*)calloc((n_input * 2 + 1), sizeof(size_t));
         input_neurons_per_neuron[next_neuron][0] = n_input; // each neuron connected to all input spike trains
 
         for(size_t j = 0; j<n_input; j++){
@@ -531,7 +531,7 @@ topology_t generate_layered_topology(generator_conf_t *conf){
 
         for(size_t j = 0; j<n_neurons_per_layer[i]; j++){
 
-            input_neurons_per_neuron[next_neuron] = (size_t*)malloc((n_neurons_per_layer[i-1] * 2 + 1) * sizeof(size_t));
+            input_neurons_per_neuron[next_neuron] = (size_t*)calloc((n_neurons_per_layer[i-1] * 2 + 1), sizeof(size_t));
             input_neurons_per_neuron[next_neuron][0] = n_neurons_per_layer[i-1];
         
             for(size_t l = 0; l<n_neurons_per_layer[i-1]; l++){
@@ -590,7 +590,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
         n_input_connections_per_neuron[i] = n_mean_input_connections;
 
         // randomize
-        size_t n = (size_t)(rand() % (size_t)((float)n_neurons * randomization)) / 100;
+        size_t n = (size_t)(n_mean_input_connections * randomization);
         size_t dec = (size_t)(rand() % 2);
 
         if(dec == 0){
@@ -617,7 +617,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     for(i = 0; i<n_neurons; i++){
 
         // allocate memory to store input neurons
-        input_neurons_per_neuron[i] = (size_t*)malloc((n_input_connections_per_neuron[i] * 2 + 1) * sizeof(size_t));
+        input_neurons_per_neuron[i] = (size_t*)calloc((n_input_connections_per_neuron[i] * 2 + 1), sizeof(size_t));
         input_neurons_per_neuron[i][0] = 0;
 
         size_t remaining_input_connections = n_input_connections_per_neuron[i]; 
@@ -707,6 +707,390 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     return topology;
 }
 
+// *************************************************************************
+// * CLUSTERED TOPOLOGY GENERATOR *
+
+int create_clusters(clusters_info_t *ci) {
+
+    if(ci->n_clusters == 0) {
+        fprintf(stderr, "\nWarning: Number of clusters is zero\n");
+        return 1;
+    }
+    
+    if(ci->n_clusters > ci->n_neurons_cluster) {
+        fprintf(stderr, "\nWarning: Number of clusters is bigger than number of neurons\n");
+        return 2;
+    }
+
+    ci->cluster_sizes = malloc((ci->n_clusters) * sizeof(*ci->cluster_sizes));
+    ci->cluster_start = malloc((ci->n_clusters) * sizeof(*ci->cluster_start));
+    ci->neuron_cluster = malloc((ci->n_neurons_cluster) * sizeof(*ci->neuron_cluster));
+
+     
+    size_t default_cluster_size = ci->n_neurons_cluster / ci->n_clusters;
+    size_t remainder = ci->n_neurons_cluster % ci->n_clusters;
+    size_t neuron_count = 0;
+
+    for(size_t i = 0; i < ci->n_clusters; i++) {
+        
+        // uneko clusterraren tamaina kalkulatu
+        ci->cluster_start[i] = neuron_count; 
+        ci->cluster_sizes[i] = default_cluster_size + (i < remainder ? 1 : 0);
+
+        neuron_count += ci->cluster_sizes[i];
+
+        // neuronei clusterra esleitu
+        size_t end = ci->cluster_start[i] + ci->cluster_sizes[i];
+        for(size_t j = ci->cluster_start[i]; j < end; j++) ci->neuron_cluster[j] = i;
+    }
+
+    if(neuron_count != ci->n_neurons_cluster) {
+        fprintf(stderr, "\nError assigning neurons to cluster: result does not match n_neurons in clusters\n");
+        return 3;
+    }
+
+    return 0;
+}
+
+int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, float intra_medium_connectivity, size_t n_input) {
+
+    // 1. INPUT connections
+    ci->input_connections = malloc(ci->n_neurons_medium * sizeof(*ci->input_connections));
+    
+    size_t ratio = 5; // * SUPONIENDO que cada spike train (n_input) tiene 5 conexiones hacia Medium
+
+    size_t k_input = (size_t) (n_input * ratio / ci->n_neurons_medium); // ! chequear posible overflow de size_t por n_input * ratio
+    size_t k_input_rest = (size_t) (n_input * ratio % ci->n_neurons_medium); // !
+
+    // 2. INTRA connections (mismo num de conexiones para todos)
+    size_t k_intra = (size_t) round(intra_medium_connectivity * (double) ci->n_neurons_medium);
+    ci->k_intra = k_intra;
+
+    // for: neuronas medium
+    for(size_t i = 0; i < ci->n_neurons_medium; i++) {
+        
+        ci->input_connections[i] = k_input + (i < k_input_rest ? 1 : 0);
+        
+        nicpn[i] = ci->input_connections[i] + k_intra;
+    }
+
+    return 0;
+}
+
+int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, float intra_cluster_connectivity, float inter_cluster_connectivity, size_t n_input) {
+
+    // alocar memoria
+    ci->medium_connections = malloc(ci->n_neurons_cluster * sizeof(*ci->medium_connections));
+    ci->intra_connections = malloc(ci->n_neurons_cluster * sizeof(*ci->intra_connections));
+    ci->inter_connections = malloc(ci->n_neurons_cluster * sizeof(*ci->inter_connections));
+    
+    if(!ci->medium_connections || !ci->intra_connections || !ci->inter_connections) {
+        fprintf(stderr, "\nError creating medium/intra/inter connections array for clusters\n");
+        return 1;
+    }
+
+    // conexiones con Medium:
+        // suponiendo que cada neurona de medium tiene *5* conexiones
+    size_t ratio = 5;
+
+        // cuantas conexiones de medium tiene cada neurona de cluster:
+    size_t k_medium = (size_t) (ci->n_neurons_medium * ratio / ci->n_neurons_cluster); // ! chequear overflow por n_neurons_medium * ratio en size_t
+    size_t k_medium_hondarra = (size_t) (ci->n_neurons_medium * ratio % ci->n_neurons_cluster); // !
+
+    
+    size_t base_k_medium = k_medium;
+    size_t k_medium_rem = k_medium_hondarra;
+
+    for(size_t local = 0; local < ci->n_neurons_cluster; local++) {
+        size_t global = ci->n_neurons_medium + local;
+
+        size_t cluster = ci->neuron_cluster[local];
+        size_t size = ci->cluster_sizes[cluster];
+
+        size_t n_intra_neurons = (size > 0) ? size - 1 : 0; // el if elimina posibilidad de valores negativos
+        size_t n_inter_neurons = ci->n_neurons_cluster - size;
+
+        /* compute medium connections for this local neuron (do not accumulate) */
+        size_t k_medium_local = base_k_medium + (local < k_medium_rem ? 1 : 0);
+        size_t k_intra = (size_t)round(intra_cluster_connectivity * (double) n_intra_neurons);
+        size_t k_inter = (size_t)round(inter_cluster_connectivity * (double) n_inter_neurons);
+
+        // chequear excesos
+        if(k_intra > n_intra_neurons) k_intra = n_intra_neurons;
+        if(k_inter > n_inter_neurons) k_inter = n_inter_neurons;
+
+        nicpn[global] = k_intra + k_inter + k_medium_local;
+
+        ci->medium_connections[local] = k_medium_local;
+        ci->intra_connections[local] = k_intra;
+        ci->inter_connections[local] = k_inter;
+    }
+    
+    return 0;
+}
+
+// * Random neuron generator helpers
+// Medium clusterreko neurona
+size_t rand_neuron_medium(clusters_info_t *ci) {
+
+    return rand_lim((int) ci->n_neurons_medium - 1);
+}
+
+// cluster bereko neurona
+size_t rand_neuron_intra(const clusters_info_t *ci, size_t neuron)
+{
+    // OBTENER cluster (c), start (s) y numero de elementos en cluster (n)
+    size_t c = ci->neuron_cluster[neuron], s = ci->cluster_start[c], n = ci->cluster_sizes[c];
+
+    // calcular posicion local de neuron (p), calcular indice válido (r) [0, n-2]
+    size_t p = neuron - s, r = (size_t) rand() % (n - 1);
+
+    // si r cae antes que p, devuelve s + r; else sumar 1
+    return s + (r >= p ? r + 1 : r);
+}
+
+// EZ cluster berekoa, EZ Medium clusterrekoa den neurona
+size_t rand_neuron_inter(clusters_info_t *ci, size_t neuron) {
+    
+    size_t c = ci->neuron_cluster[neuron];
+    size_t s = ci->cluster_start[c];
+    size_t n = ci->cluster_sizes[c];
+    size_t total = ci->n_neurons_cluster;
+
+    size_t candidates = total - n;
+    size_t r = rand_lim((int)candidates - 1);
+
+    return (r < s) ? r : (r + n);
+}
+
+int add_connection(size_t dest, size_t source, size_t **input_neurons_per_neuron, size_t *j) {
+
+    // check if valid (aka neuron not in array inpn)
+    int valid = 1;
+    for(size_t l = 0; l < (*j); l++){
+        if(input_neurons_per_neuron[dest][l * 2 +1] == source){
+
+            // already in the array, update number of connections
+            valid = 0;
+            input_neurons_per_neuron[dest][l*2+2] ++;
+        }
+    }
+
+    // neuron not encountered in the array, so add it
+    if(valid == 1){
+
+        input_neurons_per_neuron[dest][(*j) * 2 + 1] = source;
+        input_neurons_per_neuron[dest][(*j) * 2 + 2] ++;
+        
+        // new input neuron added
+        input_neurons_per_neuron[dest][0] ++;
+
+        // update j
+        (*j)++;
+    }   
+
+    return 0;
+}
+
+/*
+    crear las conexiones del cluster medium:
+    - conexiones con neuronas input (input_trains)
+    - conexiones internas
+*/
+int create_medium_input_connections(clusters_info_t *ci, size_t *nicpn, size_t **inpn, size_t *generated_n_synapses, size_t n_input) {
+
+    // j = indice de neuronas nuevas
+        // crear array para guardar valores de j para 2 for diferentes (intra, n_input)
+    size_t *j_indexes = calloc(ci->n_neurons_medium, sizeof(size_t));
+
+
+    // bucle de conexiones INTRA
+    for(size_t i = 0; i < ci->n_neurons_medium; i++) {
+
+        // Alokatu mem
+        inpn[i] = calloc((nicpn[i] * 2 + 1), sizeof(size_t));
+        inpn[i][0] = 0;
+
+    
+        /* use the medium-wide intra count stored in ci->k_intra */
+        size_t remaining_intra_connections = ci->k_intra;
+        size_t rand_neuron_intra;
+        while(remaining_intra_connections > 0) {
+            
+            // obtener neurona random de Medium
+            do{
+                rand_neuron_intra = (size_t) rand() % ci->n_neurons_medium;
+            } while (rand_neuron_intra == i);
+
+            // conectar (neurona random es el INPUT)
+            add_connection(i, rand_neuron_intra, inpn, &j_indexes[i]);
+            (*generated_n_synapses)++;
+
+            remaining_intra_connections--;
+        }
+    }
+
+    // bucle de N_INPUT (INPUT_TRAINS)
+    size_t *created_connections = calloc(ci->n_neurons_medium, sizeof(size_t));
+    size_t random_medium_neuron;
+
+    // for: n_input / spike train
+    for(size_t k = 0; k < n_input; k++) { 
+        
+        // for: completar conexiones de n_input
+        for(size_t l = 0; l < 5; l++) { 
+
+            // obtener neurona Medium random que NO esté COMPLETA de conexiones
+            do {
+                random_medium_neuron = (size_t) rand() % ci->n_neurons_medium;
+            } while (created_connections[random_medium_neuron] >= ci->input_connections[random_medium_neuron]);
+
+            // conectar
+            add_connection(random_medium_neuron, k, inpn, &j_indexes[random_medium_neuron]);
+            (*generated_n_synapses)++;
+
+            created_connections[random_medium_neuron]++;
+        }
+    }
+
+    free(j_indexes); free(created_connections);
+}
+
+int create_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, size_t **inpn, size_t *generated_n_synapses, size_t n_neurons) {
+
+    /* iterate over cluster-local indices and map to global indices */
+    for(size_t local = 0; local < ci->n_neurons_cluster; local++) {
+        size_t global = ci->n_neurons_medium + local;
+
+        /* allocate memory for this global neuron */
+        inpn[global] = calloc((nicpn[global] * 2 + 1), sizeof(size_t));
+        inpn[global][0] = 0;
+
+        size_t j = 0; // contador de entradas añadidas
+
+        /* connections from Medium (sources are global [0..n_neurons_medium-1]) */
+        size_t remaining_medium_connections = ci->medium_connections[local];
+        while(remaining_medium_connections > 0) {
+            size_t in_neuron = (size_t) rand() % ci->n_neurons_medium;
+            add_connection(global, in_neuron, inpn, &j);
+            (*generated_n_synapses)++;
+            remaining_medium_connections--;
+        }
+
+        /* intra-cluster connections: rand_neuron_intra expects a local index */
+        size_t remaining_intra_connections = ci->intra_connections[local];
+        while(remaining_intra_connections > 0) {
+            size_t in_neuron_local = rand_neuron_intra(ci, local);
+            size_t in_neuron = ci->n_neurons_medium + in_neuron_local;
+            add_connection(global, in_neuron, inpn, &j);
+            (*generated_n_synapses)++;
+            remaining_intra_connections--;
+        }
+
+        /* inter-cluster connections (exclude medium) */
+        size_t remaining_inter_connections = ci->inter_connections[local];
+        while(remaining_inter_connections > 0) {
+            size_t in_neuron_local;
+            do {
+                in_neuron_local = rand_neuron_inter(ci, local);
+            } while(ci->neuron_cluster[local] == ci->neuron_cluster[in_neuron_local]);
+
+            size_t in_neuron = ci->n_neurons_medium + in_neuron_local;
+            add_connection(global, in_neuron, inpn, &j);
+            (*generated_n_synapses)++;
+            remaining_inter_connections--;
+        }
+    }
+}
+
+
+/*
+    Topologia: INPUT -> MEDIUM -> CLUSTERS
+
+    INPUT: sarrera "neuronak", MEDIUM clusterrera konektatuko dira.
+        - ratio 'input:medium' = 1:1, 1:5, 1:10, ...
+    MEDIUM: neurona hauek input-a prozesatzen dute, clusterrei emateko
+        - ratio 'medium:cluster' = 1:1, 1:5, ...
+    CLUSTER: hainbat neurona talde, haien artean konektatuak. azken prozesamendu maila
+*/
+topology_t generate_clustered_topology(generator_conf_t *conf, size_t n_clusters, size_t n_neurons_medium, float intra_cluster_connectivity, float inter_cluster_connectivity, float intra_medium_connectivity) {
+    // TODO
+    /* 
+        - añadir los argumentos (entre otras cosas) a conf 
+        - chequear argumentos de conf al inicio de la función
+        - funtzio bakoitzaren erroreak tratatu
+    */
+
+    // 0. Obtener info general e inicializar clusters_info
+    size_t n_neurons = conf->n_neurons;
+    size_t n_input = conf->n_input;
+
+
+    clusters_info_t *clusters_info = malloc(sizeof(clusters_info_t));
+    if(!clusters_info) {
+        fprintf(stderr, "\nError: could not allocate clusters_info struct\n");
+        exit(1);
+    }
+
+    // 1. Medium eta clusterrak sortu
+    // 1.1 MEDIUM clusterra sortu
+    clusters_info->n_neurons_medium = n_neurons_medium;
+
+
+    // 1.2 CLUSTERRAK sortu
+    clusters_info->n_clusters = n_clusters;
+    clusters_info->n_neurons_cluster = n_neurons - clusters_info->n_neurons_medium;
+    create_clusters(clusters_info);
+
+     
+    // 2. Neurona bakoitzaren INPUT konexioak *kontatu*
+        // Helburua: memoria alokatzea, beranduago konexioak idazteko
+        // Metodoa: estimazio/aproximazio bidez
+    size_t *n_input_connections_per_neuron = (size_t*) malloc(n_neurons * sizeof(size_t));
+
+    // 2.1 MEDIUM
+    count_medium_input_connections(clusters_info, n_input_connections_per_neuron, intra_medium_connectivity, n_input);
+    
+    // 2.2 CLUSTERS
+    count_clusters_input_connections(clusters_info, n_input_connections_per_neuron, intra_cluster_connectivity, inter_cluster_connectivity, n_input);
+   
+
+    // 3. Neurona bakoitzaren input konexioak *sortu/inplementatu*
+    size_t **input_neurons_per_neuron = (size_t**) malloc(n_neurons * sizeof(size_t*));
+    size_t generated_n_synapses = 0;
+
+    // 3.1 MEDIUM
+    create_medium_input_connections(clusters_info, n_input_connections_per_neuron, input_neurons_per_neuron, &generated_n_synapses, n_input);
+
+    // 3.2 CLUSTERS
+    create_clusters_input_connections(clusters_info, n_input_connections_per_neuron, input_neurons_per_neuron, &generated_n_synapses, n_neurons);
+
+    
+    // 4. rellenar topology_t 
+    topology_t topology;
+     
+    topology.clusters_info = clusters_info;
+    
+    // topology_t
+    topology.n_neurons = n_neurons;
+    topology.n_input = n_input;
+    topology.n_output_neurons = conf->n_output_neurons;
+    topology.n_synapses = generated_n_synapses;
+
+    topology.input_neurons_per_neuron = input_neurons_per_neuron;
+
+    topology.n_layers = 1;
+    topology.n_neurons_per_layer = 0;
+
+   
+    topology.neuron_type = conf->neuron_type;
+    conf->n_synapses = topology.n_synapses;
+
+
+    free(n_input_connections_per_neuron);
+
+    return topology;
+}
 
 // [CRITERIA MAPPING]
 
@@ -869,7 +1253,8 @@ topology_t generate_topology(generator_conf_t *conf){
     if(conf->layered == 1)
         topology = generate_layered_topology(conf);
     else
-        topology = generate_non_layered_topology(conf);
+        //topology = generate_non_layered_topology(conf);
+        //topology = generate_clustered_topology(conf, 4, 0.5); // todo: añadir argumentos a conf
 
     return topology;
 }

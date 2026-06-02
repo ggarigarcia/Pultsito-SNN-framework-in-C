@@ -183,6 +183,12 @@ avx512:
 network:
 	mkdir -p $(BIN_DIR)
 	$(CC) -I$(INC_DIR) -I$(INC_DIR_LIBS) -o $(BIN_DIR)/$(NETWORK_EXE) src/networks/snn_generator_main.c src/networks/snn_generator.c lib/toml_c/toml.c -lm
+	@echo "\nCompilación finalizada\nUso: ./bin/network_generator <fichero conf network>"
+
+dataset:
+	mkdir -p $(BIN_DIR)
+	$(CC) -I$(INC_DIR) -I$(INC_DIR_LIBS) -o $(BIN_DIR)/dataset_generator src/datasets/dataset_generator.c -lm
+	@echo "\nCompilación dataset finalizada\nUso: ./bin/dataset_generator"
 
 # ==================================================
 # Clean
