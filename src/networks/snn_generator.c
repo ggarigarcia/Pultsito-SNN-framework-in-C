@@ -371,6 +371,69 @@ generator_conf_t* load_synapses_section(generator_conf_t *conf, toml_table_t *tb
     return conf;
 }
 
+generator_conf_t* load_clusters_section(generator_conf_t *conf, toml_table_t *tbl){
+
+    toml_value_t n_clusters, n_neurons_medium, intra_medium_connectivity, intra_cluster_connectivity,
+                 inter_cluster_connectivity, input_medium_ratio, medium_cluster_ratio;
+
+    // load section
+    n_clusters = toml_table_int(tbl, "n_clusters");
+    n_neurons_medium = toml_table_int(tbl, "n_neurons_medium");
+    intra_medium_connectivity = toml_table_double(tbl, "intra_medium_connectivity");
+    intra_cluster_connectivity = toml_table_double(tbl, "intra_cluster_connectivity");
+    inter_cluster_connectivity = toml_table_double(tbl, "inter_cluster_connectivity");
+    input_medium_ratio = toml_table_int(tbl, "input_medium_ratio");
+    medium_cluster_ratio = toml_table_int(tbl, "medium_cluster_ratio");
+
+    // check provided values and set default values
+    if(!n_clusters.ok){
+        
+        printf(" > WARNING: Number of clusters not provided. Setting 0 (clustering disabled).\n");
+        n_clusters.u.i = 0;
+    }
+    if(!n_neurons_medium.ok){
+        
+        printf(" > WARNING: Number of medium neurons not provided. Setting 0.\n");
+        n_neurons_medium.u.i = 0;
+    }
+    if(!intra_medium_connectivity.ok){
+        
+        printf(" > WARNING: Intra-medium connectivity not provided. Setting 0.5.\n");
+        intra_medium_connectivity.u.d = 0.5;
+    }
+    if(!intra_cluster_connectivity.ok){
+        
+        printf(" > WARNING: Intra-cluster connectivity not provided. Setting 0.3.\n");
+        intra_cluster_connectivity.u.d = 0.3;
+    }
+    if(!inter_cluster_connectivity.ok){
+        
+        printf(" > WARNING: Inter-cluster connectivity not provided. Setting 0.1.\n");
+        inter_cluster_connectivity.u.d = 0.1;
+    }
+    if(!input_medium_ratio.ok){
+        
+        printf(" > WARNING: Input-medium ratio not provided. Setting 5.\n");
+        input_medium_ratio.u.i = 5;
+    }
+    if(!medium_cluster_ratio.ok){
+        
+        printf(" > WARNING: Medium-cluster ratio not provided. Setting 5.\n");
+        medium_cluster_ratio.u.i = 5;
+    }
+
+    // copy values to conf file
+    conf->n_clusters = n_clusters.u.i;
+    conf->n_neurons_medium = n_neurons_medium.u.i;
+    conf->intra_medium_connectivity = (float)intra_medium_connectivity.u.d;
+    conf->intra_cluster_connectivity = (float)intra_cluster_connectivity.u.d;
+    conf->inter_cluster_connectivity = (float)inter_cluster_connectivity.u.d;
+    conf->input_medium_ratio = input_medium_ratio.u.i;
+    conf->medium_cluster_ratio = medium_cluster_ratio.u.i;
+
+    return conf;
+}
+
 generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
 
     toml_value_t store_in_file, output_file, output_file_neurons, output_file_synapses, output_file_out, output_file_neurons_out, output_file_synapses_out,
@@ -709,6 +772,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
 
 // *************************************************************************
 // * CLUSTERED TOPOLOGY GENERATOR *
+// * HELPERS
 
 int create_clusters(clusters_info_t *ci) {
 
@@ -752,18 +816,16 @@ int create_clusters(clusters_info_t *ci) {
     return 0;
 }
 
-int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, float intra_medium_connectivity, size_t n_input) {
+int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, size_t n_input) {
 
     // 1. INPUT connections
     ci->input_connections = malloc(ci->n_neurons_medium * sizeof(*ci->input_connections));
-    
-    size_t ratio = 5; // * SUPONIENDO que cada spike train (n_input) tiene 5 conexiones hacia Medium
 
-    size_t k_input = (size_t) (n_input * ratio / ci->n_neurons_medium); // ! chequear posible overflow de size_t por n_input * ratio
-    size_t k_input_rest = (size_t) (n_input * ratio % ci->n_neurons_medium); // !
+    size_t k_input = (size_t) (n_input * ci->input_medium_ratio / ci->n_neurons_medium); // ! chequear posible overflow de size_t por n_input * ratio
+    size_t k_input_rest = (size_t) (n_input * ci->input_medium_ratio % ci->n_neurons_medium); // !
 
     // 2. INTRA connections (mismo num de conexiones para todos)
-    size_t k_intra = (size_t) round(intra_medium_connectivity * (double) ci->n_neurons_medium);
+    size_t k_intra = (size_t) round(ci->intra_medium_connectivity * (double) ci->n_neurons_medium);
     ci->k_intra = k_intra;
 
     // for: neuronas medium
@@ -777,7 +839,7 @@ int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, float int
     return 0;
 }
 
-int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, float intra_cluster_connectivity, float inter_cluster_connectivity, size_t n_input) {
+int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, size_t n_input) {
 
     // alocar memoria
     ci->medium_connections = malloc(ci->n_neurons_cluster * sizeof(*ci->medium_connections));
@@ -790,12 +852,9 @@ int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, float i
     }
 
     // conexiones con Medium:
-        // suponiendo que cada neurona de medium tiene *5* conexiones
-    size_t ratio = 5;
-
         // cuantas conexiones de medium tiene cada neurona de cluster:
-    size_t k_medium = (size_t) (ci->n_neurons_medium * ratio / ci->n_neurons_cluster); // ! chequear overflow por n_neurons_medium * ratio en size_t
-    size_t k_medium_hondarra = (size_t) (ci->n_neurons_medium * ratio % ci->n_neurons_cluster); // !
+    size_t k_medium = (size_t) (ci->n_neurons_medium * ci->medium_cluster_ratio / ci->n_neurons_cluster); // ! chequear overflow por n_neurons_medium * ratio en size_t
+    size_t k_medium_hondarra = (size_t) (ci->n_neurons_medium * ci->medium_cluster_ratio % ci->n_neurons_cluster); // !
 
     
     size_t base_k_medium = k_medium;
@@ -812,8 +871,8 @@ int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, float i
 
         /* compute medium connections for this local neuron (do not accumulate) */
         size_t k_medium_local = base_k_medium + (local < k_medium_rem ? 1 : 0);
-        size_t k_intra = (size_t)round(intra_cluster_connectivity * (double) n_intra_neurons);
-        size_t k_inter = (size_t)round(inter_cluster_connectivity * (double) n_inter_neurons);
+        size_t k_intra = (size_t)round(ci->intra_cluster_connectivity * (double) n_intra_neurons);
+        size_t k_inter = (size_t)round(ci->inter_cluster_connectivity * (double) n_inter_neurons);
 
         // chequear excesos
         if(k_intra > n_intra_neurons) k_intra = n_intra_neurons;
@@ -938,7 +997,7 @@ int create_medium_input_connections(clusters_info_t *ci, size_t *nicpn, size_t *
     for(size_t k = 0; k < n_input; k++) { 
         
         // for: completar conexiones de n_input
-        for(size_t l = 0; l < 5; l++) { 
+        for(size_t l = 0; l < ci->input_medium_ratio; l++) { 
 
             // obtener neurona Medium random que NO esté COMPLETA de conexiones
             do {
@@ -1013,13 +1072,7 @@ int create_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, size_t
         - ratio 'medium:cluster' = 1:1, 1:5, ...
     CLUSTER: hainbat neurona talde, haien artean konektatuak. azken prozesamendu maila
 */
-topology_t generate_clustered_topology(generator_conf_t *conf, size_t n_clusters, size_t n_neurons_medium, float intra_cluster_connectivity, float inter_cluster_connectivity, float intra_medium_connectivity) {
-    // TODO
-    /* 
-        - añadir los argumentos (entre otras cosas) a conf 
-        - chequear argumentos de conf al inicio de la función
-        - funtzio bakoitzaren erroreak tratatu
-    */
+topology_t generate_clustered_topology(generator_conf_t *conf) {
 
     // 0. Obtener info general e inicializar clusters_info
     size_t n_neurons = conf->n_neurons;
@@ -1034,11 +1087,11 @@ topology_t generate_clustered_topology(generator_conf_t *conf, size_t n_clusters
 
     // 1. Medium eta clusterrak sortu
     // 1.1 MEDIUM clusterra sortu
-    clusters_info->n_neurons_medium = n_neurons_medium;
+    clusters_info->n_neurons_medium = conf->n_neurons_medium;
 
 
     // 1.2 CLUSTERRAK sortu
-    clusters_info->n_clusters = n_clusters;
+    clusters_info->n_clusters = conf->n_clusters;
     clusters_info->n_neurons_cluster = n_neurons - clusters_info->n_neurons_medium;
     create_clusters(clusters_info);
 
@@ -1048,11 +1101,19 @@ topology_t generate_clustered_topology(generator_conf_t *conf, size_t n_clusters
         // Metodoa: estimazio/aproximazio bidez
     size_t *n_input_connections_per_neuron = (size_t*) malloc(n_neurons * sizeof(size_t));
 
+    clusters_info->intra_medium_connectivity = conf->intra_medium_connectivity;
+
+    clusters_info->intra_cluster_connectivity = conf->intra_cluster_connectivity;
+    clusters_info->inter_cluster_connectivity = conf->inter_cluster_connectivity;
+
+    clusters_info->input_medium_ratio = conf->input_medium_ratio;
+    clusters_info->medium_cluster_ratio = conf->medium_cluster_ratio;
+
     // 2.1 MEDIUM
-    count_medium_input_connections(clusters_info, n_input_connections_per_neuron, intra_medium_connectivity, n_input);
+    count_medium_input_connections(clusters_info, n_input_connections_per_neuron, n_input);
     
     // 2.2 CLUSTERS
-    count_clusters_input_connections(clusters_info, n_input_connections_per_neuron, intra_cluster_connectivity, inter_cluster_connectivity, n_input);
+    count_clusters_input_connections(clusters_info, n_input_connections_per_neuron, n_input);
    
 
     // 3. Neurona bakoitzaren input konexioak *sortu/inplementatu*
@@ -1204,7 +1265,7 @@ generator_conf_t* read_configuration_file(char* conf_file){
 
     // define TOML library for TOML file sections
     toml_table_t *tbl, *tbl_general, *tbl_layered, *tbl_no_fully_connected, *tbl_no_layered, *tbl_neurons, *tbl_synapses, *tbl_IO;
-    
+    toml_table_t *tbl_clusters;
 
     // load TOML file
     char errbuf[100];
@@ -1220,6 +1281,7 @@ generator_conf_t* read_configuration_file(char* conf_file){
     tbl_neurons = toml_table_table(tbl, "neurons");
     tbl_synapses = toml_table_table(tbl, "synapses");
     tbl_IO = toml_table_table(tbl, "IO");
+    tbl_clusters = toml_table_table(tbl, "clusters");
 
     // load general section
     conf = load_general_section(conf, tbl_general);
@@ -1240,6 +1302,9 @@ generator_conf_t* read_configuration_file(char* conf_file){
     
     // load IO section
     conf = load_IO_section(conf, tbl_IO);
+
+    // (g) load clusters section
+    conf = load_clusters_section(conf, tbl_clusters);
 
     // return configuration struct
     return conf;

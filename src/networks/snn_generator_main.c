@@ -15,15 +15,8 @@ int main(int argc, char *argv[]) {
 
     // initialize topology
     //topology_t topology = generate_topology(conf); // ORIGINAL
-    
-    size_t n_clusters = 4;
-    float intra_cluster_connectivity = 0.75;
-    float inter_cluster_connectivity = 0.25;
-    
-    size_t n_neurons_medium = 50;
-    float intra_medium_connectivity = 0.5;
 
-    topology_t topology = generate_clustered_topology(conf, n_clusters, n_neurons_medium, intra_cluster_connectivity, inter_cluster_connectivity, intra_medium_connectivity);
+    topology_t topology = generate_clustered_topology(conf);
     
 
     // initialize neurons and synapses

@@ -111,6 +111,15 @@ typedef struct generator_conf_t {
     int output_is_separated; // whether network should be stored in several files
     int criteria; // storage criteria
 
+    // clusters: configuration for clustered topology
+    size_t n_clusters;
+    size_t n_neurons_medium;
+    float intra_medium_connectivity;
+    float intra_cluster_connectivity;
+    float inter_cluster_connectivity;
+    size_t input_medium_ratio;
+    size_t medium_cluster_ratio;
+
 } generator_conf_t;
 
 /// @brief Structure to store all the data relative to the neurons
@@ -144,6 +153,10 @@ typedef struct clusters_info_t {
     size_t *input_connections;
     size_t k_intra;
 
+    float intra_medium_connectivity; // num conn of each spike_train to medium neurons
+
+    size_t input_medium_ratio;
+    
 
     // clusters
     size_t n_clusters;
@@ -152,6 +165,11 @@ typedef struct clusters_info_t {
     size_t *cluster_sizes;
     size_t *cluster_start;
     size_t *neuron_cluster;
+
+    float intra_cluster_connectivity;
+    float inter_cluster_connectivity;
+
+    size_t medium_cluster_ratio; // num conn of each medium neuron to clusters neurons
 
     size_t *medium_connections;
     size_t *intra_connections;
@@ -191,8 +209,8 @@ topology_t generate_topology(generator_conf_t *conf);
 // * CLUSTERED TOPOLOGY *
 int create_clusters(clusters_info_t *ci);
 
-int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, float intra_medium_connectivity, size_t n_input);
-int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, float intra_cluster_connectivity, float inter_cluster_connectivity, size_t n_input);
+int count_medium_input_connections(clusters_info_t *ci, size_t* nicpn, size_t n_input);
+int count_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, size_t n_input);
 
 size_t rand_neuron_medium(clusters_info_t *ci);
 size_t rand_neuron_intra(const clusters_info_t *ci, size_t neuron);
@@ -206,7 +224,7 @@ int create_clusters_input_connections(clusters_info_t *ci, size_t *nicpn, size_t
 /// @brief Generate a clustered network topology with intra-group and inter-group connectivity
 /// @param conf Structure with the configuration data
 /// @return Structure that describes the clustered topology
-topology_t generate_clustered_topology(generator_conf_t *conf, size_t n_clusters, size_t n_neurons_medium, float intra_cluster_connectivity, float inter_cluster_connectivity, float intra_medium_connectivity);
+topology_t generate_clustered_topology(generator_conf_t *conf);
 
 /// @brief Function to initialize the network neurons following the instructions in the configuration structure
 /// @param conf Structure with the neurons configuration
