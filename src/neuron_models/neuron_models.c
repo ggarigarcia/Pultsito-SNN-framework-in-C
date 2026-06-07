@@ -525,6 +525,14 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                         results->gnt_spks[gt * N * B + g_neuron_index + b] = 1;
                     // // // // // // // // // // // // // // // // // //
 
+                    
+                    // cluster spike matrix
+                    size_t current_timestep = t % results->matrix_t->n_timesteps;
+                    int cluster = results->matrix_t->neuron_to_cluster[neuron_index];
+                    if(cluster >= 0){
+                        results->matrix_t->matrix[current_timestep * n_clusters + cluster] += 1;
+                        results->matrix_t->cumulative[cluster] += 1;
+                    }
 
                     // store that the neuron fired for TB-STDP and update the trace
                     if(conf->learn){

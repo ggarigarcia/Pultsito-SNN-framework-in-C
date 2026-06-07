@@ -91,8 +91,11 @@ topology_t* load_network_information_in_topology_from_file(simulation_configurat
     neurons_t neurons; // structure to store synapses data
     synapses_t synapses; // structure to store synapses data
 
+    clusters_info_t *clusters_info = NULL; // struct to store clusters array
+
     // define table and parameters variables
     toml_table_t *tbl, *tbl_general, *tbl_neurons, *tbl_synapses;
+    toml_table_t *tbl_clusters;
 
     toml_array_t *latency_lst, *weights_lst, *training_zones_lst, *connection_lst_lst, *connection_lst;
 
@@ -110,6 +113,8 @@ topology_t* load_network_information_in_topology_from_file(simulation_configurat
     tbl_general = toml_table_table(tbl, "general");
     tbl_neurons = toml_table_table(tbl, "neurons");
     tbl_synapses = toml_table_table(tbl, "synapsis");
+
+    tbl_clusters = toml_table_table(tbl, "clusters");
     
     /* load [General] section */
     n_neurons = toml_table_int(tbl_general, "neurons");
@@ -238,10 +243,34 @@ topology_t* load_network_information_in_topology_from_file(simulation_configurat
     printf(" >> Synapses section loaded\n");
     fflush(stdout);
 
+    /* Clusters */
+    // * obtener info de clusters del fichero de conf de network de clusters
+    if(tbl_clusters){
+        clusters_info = calloc(1, sizeof(clusters_info_t));
+        
+        clusters_info->n_clusters = toml_table_int(tbl_clusters, "n_clusters").u.i;
+        clusters_info->n_neurons_medium = toml_table_int(tbl_clusters, "n_neurons_medium").u.i;
+        clusters_info->n_neurons_cluster = topology->n_neurons - clusters_info->n_neurons_medium;
+
+        // * get neuron_cluster file
+        if(conf->network_neuron_cluster_file) {
+            FILE *f_clusters = fopen(conf->network_neuron_cluster_file, "r");
+            if(f_clusters) {
+                clusters_info->neuron_cluster = malloc(clusters_info->n_neurons_cluster * sizeof(size_t));
+                for(size_t i = 0; i < clusters_info->n_neurons_cluster; i++) {
+                    fscanf(f_clusters, "%zu", &clusters_info->neuron_cluster[i]);
+                }
+                fclose(f_clusters);
+            }
+        }
+    }
+    
 
     // link neurons and synapses data for the topology
     topology->neurons = neurons;
     topology->synapses = synapses;
+
+    topology->clusters_info = clusters_info;
 
     return topology;
 }
@@ -295,6 +324,10 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
     connect_network_input_criteria(snn, topology, conf);
 
     // deallocate intermeadite structure used for initializing the network
+    // * robar clusters_info antes de liberar topology
+    snn->clusters_info = topology->clusters_info;
+    topology->clusters_info = NULL; // evitar que deallocate_topology_str lo libere
+
     deallocate_topology_str(topology);
 
     // return the initialized SNN structure

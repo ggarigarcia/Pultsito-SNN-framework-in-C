@@ -259,7 +259,7 @@ simulation_configuration_t* load_output_section_from_toml(simulation_configurati
 simulation_configuration_t* load_network_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
 
     // [network] section
-    toml_value_t network_file, network_neurons_file, network_synapses_file, behaviours, delays, weights,
+    toml_value_t network_file, network_neurons_file, network_synapses_file, network_clusters_file, behaviours, delays, weights,
                 training_zones, thresh, v_rest, t_refract, R;
 
     
@@ -267,6 +267,7 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
     network_file           =  toml_table_string(tbl, "network_file");
     network_neurons_file   =  toml_table_string(tbl, "network_neurons_file");
     network_synapses_file  =  toml_table_string(tbl, "network_synapses_file");
+    network_clusters_file  =  toml_table_string(tbl, "network_clusters_file");
 
     // check if all is in configuration file
     if(!network_file.ok && conf->load_network == 0)
@@ -299,6 +300,14 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
         else{
             
             printf(" > network_file_synapses for loading the synapses properties not provided! Exiting.\n");
+            exit(1);
+        }
+        if(network_clusters_file.ok){
+            conf->network_neuron_cluster_file = strdup(network_clusters_file.u.s);
+        }
+        else{
+            
+            printf(" > clusters_file for loading the clusters' info not provided! Exiting.\n");
             exit(1);
         }
     }

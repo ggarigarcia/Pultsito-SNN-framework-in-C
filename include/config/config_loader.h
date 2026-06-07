@@ -46,6 +46,10 @@ typedef struct simulation_configuration_t {
     char *network_neurons_file; // file path to load network neurons from 
     char *network_synapses_file; // file path to load network synapses from
 
+    // * conectar clusters info
+    char *network_neuron_cluster_file; // file path to load clusters info from
+
+
 } simulation_configuration_t;
 
 

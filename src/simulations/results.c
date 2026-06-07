@@ -5,15 +5,16 @@
 #include "simulations/results.h"
 #include "config/config_loader.h"
 #include "utils.h"
+#include "networks/snn_generator.h" // * clusters_info para init batch results cpu
 
-GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results){
+GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results, clusters_info_t *ci){
 
     // allocate memory for the results structure
     GPU_results_t **results = (GPU_results_t**)calloc(n_results, sizeof(GPU_results_t*));
 
     for(size_t i = 0; i<n_results; i++){
         
-        results[i] = initialize_batch_results_cpu(conf, N, batch_size, T, frq);
+        results[i] = initialize_batch_results_cpu(conf, N, batch_size, T, frq, ci);
     }
 
     // return results structure
@@ -21,7 +22,7 @@ GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf,
 }
 
 // [TODO]: rethink how to generalize for storing any result type
-GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq){
+GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, clusters_info_t *ci){
 
     // allocate memory for the results structure
     GPU_results_t *results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
@@ -49,6 +50,25 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
     results->t_learn = 0.0; // time learning
     results->t_reinit = 0.0; // network reinitialization
     results->t_load = 0.0; // loading sample or batch in network
+
+
+    // * inicializar matriz circular
+    results->matrix_t = malloc(sizeof(cluster_spk_buffer_t));
+    
+    // copiar algunos elementos de clusters_info. renta copiar clusters_info completo y ya??
+    results->matrix_t->n_clusters = ci->n_clusters;
+
+    results->matrix_t->n_timesteps = 10; // TODO argumentu bezela pasa
+    results->matrix_t->current_step = 0;
+
+    results->matrix_t->neuron_to_cluster = calloc(ci->n_neurons_cluster + ci->n_neurons_medium, sizeof(int)); // * INTEGER!!
+    
+    for(size_t i = 0; i < ci->n_neurons_medium; i++) results->matrix_t->neuron_to_cluster[i] = -1; // neuronas medium = -1
+    
+    for(size_t i = 0; i < ci->n_neurons_cluster; i++) results->matrix_t->neuron_to_cluster[ci->n_neurons_medium + i] = ci->neuron_cluster[i];
+
+    results->matrix_t->matrix = calloc(results->matrix_t->n_timesteps * results->matrix_t->n_clusters, sizeof(int));
+    results->matrix_t->cumulative = calloc(results->matrix_t->n_clusters, sizeof(int));
 
     // return results structure
     return results;
@@ -84,6 +104,14 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
     results->t_learn  = 0.0; // time learning
     results->t_reinit = 0.0; // network reinitialization
     results->t_load   = 0.0; // loading sample or batch in network
+
+    // * reiniciar matriz circular
+    if(results->matrix_t){
+        results->matrix_t->current_step = 0;
+        results->matrix_t->cumulative = calloc(results->matrix_t->n_clusters, sizeof(int));
+        size_t n = results->matrix_t->n_timesteps * results->matrix_t->n_clusters;
+        for(size_t i = 0; i < n; i++) results->matrix_t->matrix[i] = 0;
+    }
 }
 
 /* Storage */
@@ -162,6 +190,14 @@ void deallocate_results_str(GPU_results_t *results){
         free(results->n_spks);
     if(results->gnt_spks)
         free(results->gnt_spks);
+
+    // * liberar matriz circular
+    if(results->matrix_t){
+        free(results->matrix_t->matrix);
+        free(results->matrix_t->cumulative);
+        free(results->matrix_t->neuron_to_cluster);
+        free(results->matrix_t);
+    }
 
     if(results)
         free(results);

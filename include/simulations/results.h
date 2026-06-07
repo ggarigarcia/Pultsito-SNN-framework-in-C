@@ -6,6 +6,18 @@ extern "C" {
 #endif
 
 typedef struct simulation_configuration_t simulation_configuration_t;
+typedef struct clusters_info_t clusters_info_t;
+
+// * Matriz circular de spikes generados por cluster
+typedef struct cluster_spk_buffer_t {
+
+    size_t n_timesteps; // filas
+    size_t n_clusters; // columnas
+    size_t current_step; // posición actual, t % n_timesteps
+    int *neuron_to_cluster; // * INTEGER DA, cluster_info-n ez bezela
+    int *matrix; // matriz circular
+    int *cumulative; // spikes totales por cluster
+} cluster_spk_buffer_t;
 
 /// @brief Structure to store results during simulation
 typedef struct GPU_results_t {
@@ -30,6 +42,9 @@ typedef struct GPU_results_t {
 
     // [TODO]
 
+    // * matriz de spikes
+    cluster_spk_buffer_t *matrix_t;
+
 } GPU_results_t;
 
 
@@ -40,7 +55,7 @@ typedef struct GPU_results_t {
 /// @param T time steps of the simulation 
 /// @param frq frequency to store the generated spikes
 /// @return Structure for storing the results
-GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results);
+GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results, clusters_info_t *ci);
 
 /// @brief Function to initialize (and allocate) the batch results structure
 /// @param conf structure with the configuration info
@@ -49,7 +64,7 @@ GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf,
 /// @param T time steps of the simulation 
 /// @param frq frequency to store the generated spikes
 /// @return Structure for storing the results
-GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq);
+GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, clusters_info_t *ci);
 
 /// @brief Function to reinitialize the structure of the results for simulating another batch
 /// @param results structure for storing the results of the batch simulation
