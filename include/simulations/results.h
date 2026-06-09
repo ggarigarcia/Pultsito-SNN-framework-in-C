@@ -13,6 +13,7 @@ typedef struct cluster_spk_buffer_t {
 
     size_t n_timesteps; // filas
     size_t n_clusters; // columnas
+    size_t batch_size; // profundidad (elementos del batch)
     size_t current_step; // posición actual, t % n_timesteps
     int *neuron_to_cluster; // * INTEGER DA, cluster_info-n ez bezela
     int *matrix; // matriz circular
@@ -106,6 +107,12 @@ void store_number_of_spikes(GPU_results_t *results, simulation_configuration_t *
 
 void store_generated_spikes_array(GPU_results_t **results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t n_results);
 void store_generated_spikes(GPU_results_t *results, simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T);
+
+/// @brief Display the circular cluster spike matrices for all batches
+/// @param results Array of results structures (one per batch)
+/// @param n_batches Number of batches simulated
+/// @param time_steps Total timesteps simulated per batch (for labeling)
+void display_cluster_spike_matrices(GPU_results_t **results, size_t n_batches, size_t time_steps);
 
 #ifdef __cplusplus
 }

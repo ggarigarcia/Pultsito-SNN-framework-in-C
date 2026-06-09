@@ -322,7 +322,7 @@ void compute_input_current_batch(GPU_SNN_t *snn, simulation_configuration_t *con
 void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *conf, GPU_results_t *results, size_t t, size_t gt){
 
     // get general information
-    size_t N, iN, P, B;
+    size_t N, iN, P, B, n_clusters;
     size_t neuron_index, g_neuron_index;
     size_t i, b;
 
@@ -330,6 +330,7 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
     iN = (size_t)snn->n_input_neurons;
     P = (size_t)conf->n_process;
     B = conf->batch_size;
+    n_clusters = results->matrix_t->n_clusters;
 
     #if defined AVX512
     {
@@ -525,13 +526,13 @@ void process_neuron_firing_batch(GPU_SNN_t *snn, simulation_configuration_t *con
                         results->gnt_spks[gt * N * B + g_neuron_index + b] = 1;
                     // // // // // // // // // // // // // // // // // //
 
-                    
+
                     // cluster spike matrix
-                    size_t current_timestep = t % results->matrix_t->n_timesteps;
+                    size_t current_timestep = gt % results->matrix_t->n_timesteps;
                     int cluster = results->matrix_t->neuron_to_cluster[neuron_index];
                     if(cluster >= 0){
-                        results->matrix_t->matrix[current_timestep * n_clusters + cluster] += 1;
-                        results->matrix_t->cumulative[cluster] += 1;
+                        results->matrix_t->matrix[current_timestep * n_clusters * B + cluster * B + b] += 1;
+                        results->matrix_t->cumulative[cluster * B + b] += 1;
                     }
 
                     // store that the neuron fired for TB-STDP and update the trace

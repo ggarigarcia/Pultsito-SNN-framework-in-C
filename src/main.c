@@ -166,6 +166,8 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
+    display_cluster_spike_matrices(results, n_batches, conf->time_steps);
+
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
     store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);
 
