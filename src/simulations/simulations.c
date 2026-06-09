@@ -41,7 +41,7 @@ void simulate_batches(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_configu
     init_batch_snn(snn, conf);
 
     // initialize struct to store batch results
-    GPU_results_t *batch_results = initialize_batch_results_cpu(conf, snn->n_neurons, conf->batch_size, 1, 1);
+    GPU_results_t *batch_results = initialize_batch_results_cpu(conf, snn->n_neurons, conf->batch_size, 1, 1, snn->clusters_info);
     
     
     // simulate test batch [TESTING]
@@ -170,6 +170,8 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
         clock_gettime(CLOCK_MONOTONIC, &end_step4);
         et4+=(end_step4.tv_sec - start_step4.tv_sec) + (end_step4.tv_nsec - start_step4.tv_nsec) / 1e9;
 
+        // update circular buffer head position
+        results->matrix_t->current_step = t % results->matrix_t->n_timesteps;
 
         /* simulation step 3.5: compute learning rule */
         clock_gettime(CLOCK_MONOTONIC, &start_step5);

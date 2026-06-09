@@ -10,6 +10,7 @@ typedef struct simulation_configuration_t simulation_configuration_t; // forward
 typedef struct topology_t topology_t; // forward declaration
 typedef struct GPU_results_t GPU_results_t; // forward declaration
 
+typedef struct clusters_info_t clusters_info_t; // forward declaration para GPU_SNN_t
 
 /// @brief SNN structure
 typedef struct GPU_SNN_t {
@@ -60,6 +61,9 @@ typedef struct GPU_SNN_t {
     float *pre_trace; // [n_synapses]: presynaptic trace
 
     char *spk_matrix; // [(n_input_synapses + n_neurons) * t_len * batch_size]
+
+    // * clusters_info for circular matrix
+    clusters_info_t *clusters_info;
 
 } GPU_SNN_t;
 

@@ -438,7 +438,7 @@ generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
 
     toml_value_t store_in_file, output_file, output_file_neurons, output_file_synapses, output_file_out, output_file_neurons_out, output_file_synapses_out,
                 output_is_separated, criteria;
-    
+    toml_value_t output_file_clusters;
 
     // load section
     store_in_file = toml_table_int(tbl, "store_in_file");
@@ -446,6 +446,8 @@ generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
     output_file = toml_table_string(tbl, "output_file");
     output_file_neurons = toml_table_string(tbl, "output_file_neurons");
     output_file_synapses = toml_table_string(tbl, "output_file_synapses");
+
+    output_file_clusters = toml_table_string(tbl, "output_file_clusters");
 
     output_file_out = toml_table_string(tbl, "output_file_out");
     output_file_neurons_out = toml_table_string(tbl, "output_file_neurons_out");
@@ -524,6 +526,8 @@ generator_conf_t* load_IO_section(generator_conf_t *conf, toml_table_t *tbl){
             conf->output_file = output_file.u.s;
             conf->output_file_neurons = output_file_neurons.u.s;
             conf->output_file_synapses = output_file_synapses.u.s;
+
+            conf->output_file_clusters = output_file_clusters.u.s;
         }
         else if(conf->criteria == 1 || conf->criteria == 2){
     
@@ -1376,6 +1380,7 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
     FILE *f, *f_out;
     FILE *f_neurons, *f_neurons_out;
     FILE *f_synapses, *f_synapses_out;
+    FILE *f_clusters;
 
     if(criteria == 0 || criteria == 2){
 
@@ -1399,6 +1404,13 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
                 perror("Error opening the file\n");
                 exit(1);
             }    
+
+            // * clusters file
+            f_clusters = fopen(conf->output_file_clusters, "w");
+            if(f_clusters == NULL) {
+                perror("Error opening the clusters file");
+                exit(1);
+            }
         }
 
         // write general information
@@ -1497,6 +1509,20 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
             }
         }
 
+        // * store clusters information        
+        fprintf(f, "[clusters]\n");
+        fprintf(f, "    has_clusters = 1\n");      
+        fprintf(f, "    n_clusters = %zu\n", topology->clusters_info->n_clusters);
+        fprintf(f, "    n_neurons_medium = %zu\n", topology->clusters_info->n_neurons_medium);
+        fprintf(f, "    n_neurons_cluster = %zu\n", topology->clusters_info->n_neurons_cluster);
+
+        // store neuron_cluster in file (abierto al principio de la funcion)
+            // añadir el path de este fichero a conf_simulation para poder leerlo
+        for(size_t i = 0; i < topology->clusters_info->n_neurons_cluster; i++) {
+            fprintf(f_clusters, "%zu ", topology->clusters_info->neuron_cluster[i]);
+        }
+        fclose(f_clusters);
+        
     }
     else if(criteria == 1 || criteria == 2){
         
@@ -1548,6 +1574,12 @@ void deallocate_topology_str(topology_t* topology){
     if(topology->synapses.w) free(topology->synapses.w);
     if(topology->synapses.delay) free(topology->synapses.delay);
     if(topology->synapses.lr) free(topology->synapses.lr);
+
+    // * clusters info
+    if(topology->clusters_info){
+        if(topology->clusters_info->neuron_cluster) free(topology->clusters_info->neuron_cluster);
+        free(topology->clusters_info);
+    }
 
     if(topology) free(topology);
 }

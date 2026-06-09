@@ -103,6 +103,7 @@ typedef struct generator_conf_t {
     char *output_file;
     char *output_file_neurons;
     char *output_file_synapses;
+    char *output_file_clusters;
 
     char *output_file_out;
     char *output_file_neurons_out;
@@ -164,7 +165,7 @@ typedef struct clusters_info_t {
 
     size_t *cluster_sizes;
     size_t *cluster_start;
-    size_t *neuron_cluster;
+    size_t *neuron_cluster; // n_neurons_cluster * sizeof(size_t)
 
     float intra_cluster_connectivity;
     float inter_cluster_connectivity;

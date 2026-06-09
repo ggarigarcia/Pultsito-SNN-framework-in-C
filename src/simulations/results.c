@@ -5,15 +5,16 @@
 #include "simulations/results.h"
 #include "config/config_loader.h"
 #include "utils.h"
+#include "networks/snn_generator.h" // * clusters_info para init batch results cpu
 
-GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results){
+GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results, clusters_info_t *ci){
 
     // allocate memory for the results structure
     GPU_results_t **results = (GPU_results_t**)calloc(n_results, sizeof(GPU_results_t*));
 
     for(size_t i = 0; i<n_results; i++){
         
-        results[i] = initialize_batch_results_cpu(conf, N, batch_size, T, frq);
+        results[i] = initialize_batch_results_cpu(conf, N, batch_size, T, frq, ci);
     }
 
     // return results structure
@@ -21,7 +22,7 @@ GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf,
 }
 
 // [TODO]: rethink how to generalize for storing any result type
-GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq){
+GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, clusters_info_t *ci){
 
     // allocate memory for the results structure
     GPU_results_t *results = (GPU_results_t*)calloc(1, sizeof(GPU_results_t));
@@ -49,6 +50,26 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
     results->t_learn = 0.0; // time learning
     results->t_reinit = 0.0; // network reinitialization
     results->t_load = 0.0; // loading sample or batch in network
+
+
+    // * inicializar matriz circular
+    results->matrix_t = malloc(sizeof(cluster_spk_buffer_t));
+    
+    // copiar algunos elementos de clusters_info. renta copiar clusters_info completo y ya??
+    results->matrix_t->n_clusters = ci->n_clusters;
+
+    results->matrix_t->n_timesteps = 10; // TODO argumentu bezela pasa
+    results->matrix_t->current_step = 0;
+
+    results->matrix_t->neuron_to_cluster = calloc(ci->n_neurons_cluster + ci->n_neurons_medium, sizeof(int)); // * INTEGER!!
+    
+    for(size_t i = 0; i < ci->n_neurons_medium; i++) results->matrix_t->neuron_to_cluster[i] = -1; // neuronas medium = -1
+    
+    for(size_t i = 0; i < ci->n_neurons_cluster; i++) results->matrix_t->neuron_to_cluster[ci->n_neurons_medium + i] = ci->neuron_cluster[i];
+
+    results->matrix_t->batch_size = batch_size;
+    results->matrix_t->matrix = calloc(results->matrix_t->n_timesteps * results->matrix_t->n_clusters * batch_size, sizeof(int));
+    results->matrix_t->cumulative = calloc(results->matrix_t->n_clusters * batch_size, sizeof(int));
 
     // return results structure
     return results;
@@ -84,6 +105,16 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
     results->t_learn  = 0.0; // time learning
     results->t_reinit = 0.0; // network reinitialization
     results->t_load   = 0.0; // loading sample or batch in network
+
+    // * reiniciar matriz circular
+    if(results->matrix_t){
+        results->matrix_t->current_step = 0;
+        size_t bs = results->matrix_t->batch_size;
+        size_t n_cum = results->matrix_t->n_clusters * bs;
+        for(size_t i = 0; i < n_cum; i++) results->matrix_t->cumulative[i] = 0;
+        size_t n = results->matrix_t->n_timesteps * results->matrix_t->n_clusters * bs;
+        for(size_t i = 0; i < n; i++) results->matrix_t->matrix[i] = 0;
+    }
 }
 
 /* Storage */
@@ -163,6 +194,14 @@ void deallocate_results_str(GPU_results_t *results){
     if(results->gnt_spks)
         free(results->gnt_spks);
 
+    // * liberar matriz circular
+    if(results->matrix_t){
+        free(results->matrix_t->matrix);
+        free(results->matrix_t->cumulative);
+        free(results->matrix_t->neuron_to_cluster);
+        free(results->matrix_t);
+    }
+
     if(results)
         free(results);
 }
@@ -178,6 +217,76 @@ void acc_batch_execution_times(GPU_results_t *results, GPU_results_t *batch_resu
     results->t_load   += batch_results->t_load;   // loading sample or batch in network
 }
 
+
+void display_cluster_spike_matrices(GPU_results_t **results, size_t n_batches, size_t time_steps){
+
+    size_t n_cl = 0, B = 0;
+    if(n_batches > 0 && results[0]->matrix_t){
+        n_cl = results[0]->matrix_t->n_clusters;
+        B = results[0]->matrix_t->batch_size;
+    }
+    if(n_cl == 0) return;
+
+    // accumulator across batches (global scope)
+    int *global_cum = (int*)calloc(n_cl, sizeof(int));
+
+    for(size_t b = 0; b < n_batches; b++){
+
+        cluster_spk_buffer_t *mtx = results[b]->matrix_t;
+        if(!mtx) continue;
+
+        size_t n_ts = mtx->n_timesteps;
+        size_t cs = mtx->current_step;
+
+        printf("\n=== Batch %zu === (buffer: %zut x %zu clusters x %zu batch)\n", b, n_ts, n_cl, B);
+
+        // matrix: timestep rows, cluster columns, summed over batch
+        printf("%-6s", "");
+        for(size_t c = 0; c < n_cl; c++) printf(" %7s%zu", "c", c);
+        printf("\n");
+
+        for(size_t r = 0; r < n_ts; r++){
+
+            size_t idx = (cs + 1 + r) % n_ts; // oldest → newest
+
+            int gt = (int)time_steps - (int)n_ts + (int)r;
+            if(gt < 0) printf("%-6s", "---");
+            else       printf("t=%-3d", gt);
+
+            for(size_t c = 0; c < n_cl; c++){
+
+                int sum = 0;
+                for(size_t e = 0; e < B; e++)
+                    sum += mtx->matrix[idx * n_cl * B + c * B + e];
+                printf(" %8d", sum);
+            }
+            printf("\n");
+        }
+
+        // per-batch cumulative
+        int batch_sum = 0;
+        printf("\nBatch cumulative:");
+        for(size_t c = 0; c < n_cl; c++){
+            int sum = 0;
+            for(size_t e = 0; e < B; e++)
+                sum += mtx->cumulative[c * B + e];
+            global_cum[c] += sum;
+            batch_sum += sum;
+            printf(" c%zu=%d", c, sum);
+        }
+
+        // global cumulative (accumulated across all batches so far)
+        printf("\nGlobal cumulative: ");
+        int global_sum = 0;
+        for(size_t c = 0; c < n_cl; c++){
+            printf("c%zu=%d ", c, global_cum[c]);
+            global_sum += global_cum[c];
+        }
+        printf("(total=%d, batch=%d)\n", global_sum, batch_sum);
+    }
+
+    free(global_cum);
+}
 
 double get_results_size(size_t N, size_t nS, size_t T){
 

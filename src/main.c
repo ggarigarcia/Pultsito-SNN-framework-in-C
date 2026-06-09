@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
     init_batch_snn(cpu_snn, conf);
 
     // initialize struct to store batch results
-    GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, 1, n_batches);
+    GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
 
     // loop over batches and simulate
     for(b = 0; b<n_batches; b++){
@@ -165,6 +165,8 @@ int main(int argc, char *argv[]) {
         simulate_batch_GPU(results[b], gpu_snn, gpu_dataset, conf, cuda_info, b);
     }
 #endif
+
+    display_cluster_spike_matrices(results, n_batches, conf->time_steps);
 
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
     store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);

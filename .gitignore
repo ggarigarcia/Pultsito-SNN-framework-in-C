@@ -76,3 +76,4 @@ dkms.conf
 .github/
 .vscode/
 *.data
+AGENTS.md
