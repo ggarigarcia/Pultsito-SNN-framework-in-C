@@ -1515,6 +1515,11 @@ void store_network(topology_t *topology, generator_conf_t *conf, int criteria){
         fprintf(f, "    n_clusters = %zu\n", topology->clusters_info->n_clusters);
         fprintf(f, "    n_neurons_medium = %zu\n", topology->clusters_info->n_neurons_medium);
         fprintf(f, "    n_neurons_cluster = %zu\n", topology->clusters_info->n_neurons_cluster);
+        // info for genetic encoding
+        fprintf(f, "    intra_medium_connectivity = %f\n", topology->clusters_info->intra_medium_connectivity);
+        fprintf(f, "    intra_cluster_connectivity  = %f\n", topology->clusters_info->intra_cluster_connectivity);
+        fprintf(f, "    inter_cluster_connectivity = %f\n", topology->clusters_info->inter_cluster_connectivity);
+
 
         // store neuron_cluster in file (abierto al principio de la funcion)
             // añadir el path de este fichero a conf_simulation para poder leerlo

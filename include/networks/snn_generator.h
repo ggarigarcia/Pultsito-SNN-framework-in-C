@@ -154,7 +154,7 @@ typedef struct clusters_info_t {
     size_t *input_connections;
     size_t k_intra;
 
-    float intra_medium_connectivity; // num conn of each spike_train to medium neurons
+    float intra_medium_connectivity; // nº of input_neuron input connections per medium neuron
 
     size_t input_medium_ratio;
     
