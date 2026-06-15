@@ -29,9 +29,10 @@ typedef struct encoding_t {
  * codificar snn a array
  * codifica todo lo necesario para generar una snn
  */
-int encode_snn(char *snn_file);
+int encode_snn(char *array_file, char *snn_conf_file);
 
 /**
- * decodificar array a snn
+ * @brief crear fichero de network utilizando array codificado
+ * Formato array: n_neurons, n_input_neurons, n_neurons_medium, intra_medium_conn, n_clusters, intra_cluster_conn, inter_cluster_conn
  */
-int decode_snn();
+int decode_snn(char *array_file, char *snn_conf_file);

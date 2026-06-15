@@ -4,7 +4,7 @@
 #include "encoders/snn_encoder.h"
 #include "toml_c/toml.h"
 
-
+/*
 int encode_snn(char *snn_file_path) {
 
     FILE *snn_file = NULL;
@@ -64,14 +64,87 @@ int encode_snn(char *snn_file_path) {
     // guardar array en un fichero
     // todo mejorar
     FILE *output_file = fopen("/home/ggarc/usb/uni/tfg/Pultsito-SNN-framework-in-C/test/out/snn-encoded-array", "w"); 
-    for(int i = 0; i < 7; i++) {
-        fprintf(output_file, "%2f ", encoding_array[i]);
+    for(int i = 0; i < 6; i++) {
+        fprintf(output_file, "%2f, ", encoding_array[i]);
     }
+    fprintf(output_file, "%2f", encoding_array[6]); // last one (koma gabe)
+
+    return 0;
+}
+*/
+
+int decode_snn(char *array_file, char *snn_conf_file) {
+
+    FILE *af, *snn_cf;
+    encoding_t data;
+    
+    /* Irakurri */
+    af = fopen(array_file, "r");
+    if(af == NULL) { 
+        printf("Error opening array_file: %s\n", array_file);
+        return 1;
+    }
+
+    float tmp_n_neurons, tmp_n_input_neurons, tmp_n_neurons_medium, tmp_n_clusters;
+    fscanf(af, "%f, %f, %f, %f, %f, %f, %f",
+           &tmp_n_neurons, &tmp_n_input_neurons, &tmp_n_neurons_medium,
+           &data.intra_medium_connectivity, &tmp_n_clusters,
+           &data.intra_cluster_connectivity, &data.inter_cluster_connectivity);
+    data.n_neurons = (size_t)tmp_n_neurons;
+    data.n_input_neurons = (size_t)tmp_n_input_neurons;
+    data.n_neurons_medium = (size_t)tmp_n_neurons_medium;
+    data.n_clusters = (size_t)tmp_n_clusters;
+    fclose(af);
+
+
+    /* Idatzi (snn_conf_file GENERALA) */
+    snn_cf = fopen(snn_conf_file, "w");
+    if(snn_cf == NULL) {
+        printf("Error opening snn_conf_file: %s\n", snn_conf_file);
+        return 1;
+    }
+
+    fprintf(snn_cf, "[general]\n");
+    fprintf(snn_cf, "\tneuron_type = 1\n");
+    fprintf(snn_cf, "\tneurons = %zu\n", data.n_neurons);
+    fprintf(snn_cf, "\tinput_neurons = %zu\n", data.n_input_neurons);
+    fprintf(snn_cf, "\toutput_neurons = 0\n");
+    fprintf(snn_cf, "\tsynapsis = 1245\n");
+    fprintf(snn_cf, "\tnetwork_is_separated = 1\n");
+    fprintf(snn_cf, "\n");
+    fprintf(snn_cf, "[neurons]\n");
+    fprintf(snn_cf, "\tv_thres = 1\n");
+    fprintf(snn_cf, "\tv_rest = 1\n");
+    fprintf(snn_cf, "\tt_refract = 1\n");
+    fprintf(snn_cf, "\tresistance = 1\n");
+    fprintf(snn_cf, "\n");
+    fprintf(snn_cf, "[synapsis]\n");
+    fprintf(snn_cf, "\tdelay = 1\n");
+    fprintf(snn_cf, "\tweight = 1\n");
+    fprintf(snn_cf, "\ttraining_zone = 1\n");
+    fprintf(snn_cf, "\n");
+    fprintf(snn_cf, "[clusters]\n");
+    fprintf(snn_cf, "\thas_clusters = 1\n");
+    fprintf(snn_cf, "\tn_clusters = %zu\n", data.n_clusters);
+    fprintf(snn_cf, "\tn_neurons_medium = %zu\n", data.n_neurons_medium);
+    fprintf(snn_cf, "\tn_neurons_cluster = 60\n");
+    fprintf(snn_cf, "\tintra_medium_connectivity = %f\n", data.intra_medium_connectivity);
+    fprintf(snn_cf, "\tintra_cluster_connectivity  = %f\n", data.intra_cluster_connectivity);
+    fprintf(snn_cf, "\tinter_cluster_connectivity = %f\n", data.inter_cluster_connectivity);
+
+    fclose(snn_cf);
 
     return 0;
 }
 
+
+// para testing
 int main(int argc, char *argv) {
 
-    encode_snn("/home/ggarc/usb/uni/tfg/Pultsito-SNN-framework-in-C/test/conf/network/network_test.toml");
+    char *array_file, *snn_conf_file;
+
+    array_file = "/home/ggarc/usb/uni/tfg/Pultsito-SNN-framework-in-C/test/conf/network/network_test.toml";
+    snn_conf_file = "";
+
+    encode_snn(array_file, snn_conf_file);
 }
