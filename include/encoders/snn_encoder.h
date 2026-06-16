@@ -35,4 +35,5 @@ int encode_snn(char *array_file, char *snn_conf_file);
  * @brief crear fichero de network utilizando array codificado
  * Formato array: n_neurons, n_input_neurons, n_neurons_medium, intra_medium_conn, n_clusters, intra_cluster_conn, inter_cluster_conn
  */
-int decode_snn(char *array_file, char *snn_conf_file);
+int decode_snn(char *array_file, char *snn_conf_file, size_t line_index);
+int decode_to_snn(char *array_file, char *snn_conf_file);
