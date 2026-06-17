@@ -6,7 +6,7 @@
 #include "toml_c/toml.h"
 
 /*
-int encode_to_snn(char *array_file, char *snn_conf_file) {
+int encode_to_snn(char *genotypes, char *snn_conf_file) {
 
     FILE *snn_file = NULL;
     char errbuf[100];
@@ -20,8 +20,8 @@ int encode_to_snn(char *array_file, char *snn_conf_file) {
 
     // obtener fichero de config del snn
     // abrir fichero
-    snn_file = fopen(array_file, "r");
-    if(snn_file == NULL) printf(" > Error opening the file %s\n", array_file);
+    snn_file = fopen(genotypes, "r");
+    if(snn_file == NULL) printf(" > Error opening the file %s\n", genotypes);
 
     tbl = toml_parse_file(snn_file, errbuf, 100);
 
@@ -100,22 +100,22 @@ static void write_config_block(FILE *f, encoding_t *e) {
     fprintf(f, "\thas_clusters = 1\n");
     fprintf(f, "\tn_clusters = %zu\n", e->n_clusters);
     fprintf(f, "\tn_neurons_medium = %zu\n", e->n_neurons_medium);
-    fprintf(f, "\tn_neurons_cluster = 60\n");
+    fprintf(f, "\tn_neurons_cluster = %zu\n", e->n_neurons - e->n_neurons_medium);
     fprintf(f, "\tintra_medium_connectivity = %f\n", e->intra_medium_connectivity);
     fprintf(f, "\tintra_cluster_connectivity  = %f\n", e->intra_cluster_connectivity);
     fprintf(f, "\tinter_cluster_connectivity = %f\n\n", e->inter_cluster_connectivity);
 }
 
 
-int decode_snn(char *array_file, char *snn_conf_file, size_t line_index) {
+int decode_snn(const char *genotypes, const char *snn_conf_file, size_t line_index) {
 
     FILE *af, *snn_cf;
     encoding_t encoding_info;
     
     /* Irakurri */
-    af = fopen(array_file, "r");
+    af = fopen(genotypes, "r");
     if(af == NULL) { 
-        printf("Error opening array_file: %s\n", array_file);
+        printf("Error opening genotypes: %s\n", genotypes);
         return 1;
     }
 
@@ -154,47 +154,96 @@ int decode_snn(char *array_file, char *snn_conf_file, size_t line_index) {
 }
 
 
-int decode_to_snn(char *array_file, char *snn_conf_file) {
+static int decode_to_file(const char *genotypes, const char *snn_conf_file, size_t index) {
 
     FILE *af, *snn_cf;
-    encoding_t encoding_info;
+    encoding_t encoding_info = {0};
+    char skip_buffer[1024];
+    float tmp[4];
     
-    af = fopen(array_file, "r");
+    af = fopen(genotypes, "r");
     if(af == NULL) { 
-        printf("Error opening array_file: %s\n", array_file);
+        printf("Error opening genotypes file: %s\n", genotypes);
         return 1;
     }
+
+    for(size_t i = 0; i < index; i++) {
+        if(fgets(skip_buffer, sizeof(skip_buffer), af) == NULL) {
+            printf("Error: index %zu exceeds number of lines in %s\n", index, genotypes);
+            fclose(af);
+            return 1;
+        }
+    }
+
+    int matched = fscanf(af, "%f, %f, %f, %f, %f, %f, %f",
+                         &tmp[0], &tmp[1], &tmp[2],
+                         &encoding_info.intra_medium_connectivity, &tmp[3],
+                         &encoding_info.intra_cluster_connectivity,
+                         &encoding_info.inter_cluster_connectivity);
+    fclose(af);
+    if(matched != 7){ 
+        printf("Error reading from genotypes file\n");
+        return 1;
+    }
+
+    encoding_info.n_neurons = (size_t)tmp[0];
+    encoding_info.n_input_neurons = (size_t)tmp[1];
+    encoding_info.n_neurons_medium = (size_t)tmp[2];
+    encoding_info.n_clusters = (size_t)tmp[3];
 
     snn_cf = fopen(snn_conf_file, "w");
     if(snn_cf == NULL) {
         printf("Error opening snn_conf_file: %s\n", snn_conf_file);
-        fclose(af);
         return 1;
     }
-
-    float tmp_n_neurons, tmp_n_input_neurons, tmp_n_neurons_medium, tmp_n_clusters;
-    while(fscanf(af, "%f, %f, %f, %f, %f, %f, %f",
-                 &tmp_n_neurons, &tmp_n_input_neurons, &tmp_n_neurons_medium,
-                 &encoding_info.intra_medium_connectivity, &tmp_n_clusters,
-                 &encoding_info.intra_cluster_connectivity, &encoding_info.inter_cluster_connectivity) == 7) {
-        encoding_info.n_neurons = (size_t)tmp_n_neurons;
-        encoding_info.n_input_neurons = (size_t)tmp_n_input_neurons;
-        encoding_info.n_neurons_medium = (size_t)tmp_n_neurons_medium;
-        encoding_info.n_clusters = (size_t)tmp_n_clusters;
-
-        write_config_block(snn_cf, &encoding_info);
-    }
-
-    fclose(af);
+    write_config_block(snn_cf, &encoding_info);
     fclose(snn_cf);
+
     return 0;
 }
 
+encoding_t *decode_to_snn(const char *genotypes, size_t index) {
 
-// para testing
-int main() {
+    FILE *af = fopen(genotypes, "r");
+    if(af == NULL) {
+        printf("Could not open genotypes file: %s\n", genotypes);
+        return NULL;
+    }
 
-    decode_to_snn("test/out/genotypes", "test/out/snn_conf_file");
-    
-    return 0;
+    encoding_t *encoding_info = malloc(sizeof(encoding_t));
+    if(encoding_info == NULL) {
+        printf("Could not malloc encoding_info struct\n");
+        return NULL;
+    }
+
+    char skip_buffer[1024];
+    for(size_t i = 0; i < index; i++) {
+        if(fgets(skip_buffer, sizeof(skip_buffer), af) == NULL) {
+            printf("Error: index %zu exceeds number of lines in %s\n", index, genotypes);
+            fclose(af);
+            free(encoding_info);
+            return NULL;
+        }
+    }
+
+    float tmp[4];
+    int matched = fscanf(af, "%f, %f, %f, %f, %f, %f, %f",
+                         &tmp[0], &tmp[1], &tmp[2],
+                         &encoding_info->intra_medium_connectivity, &tmp[3],
+                         &encoding_info->intra_cluster_connectivity,
+                         &encoding_info->inter_cluster_connectivity);
+    fclose(af);
+
+    if(matched != 7) {
+        printf("Error: could not read line %zu from %s\n", index, genotypes);
+        free(encoding_info);
+        return NULL;
+    }
+
+    encoding_info->n_neurons = (size_t)tmp[0];
+    encoding_info->n_input_neurons = (size_t)tmp[1];
+    encoding_info->n_neurons_medium = (size_t)tmp[2];
+    encoding_info->n_clusters = (size_t)tmp[3];
+
+    return encoding_info;
 }
