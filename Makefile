@@ -47,6 +47,7 @@ else
 endif
 
 NETWORK_EXE = network_generator
+GENETIC_EXE = main_genetic
 
 # Common objects
 COMMON_OBJS = \
@@ -61,6 +62,7 @@ $(OBJ_DIR)/simulations.o \
 $(OBJ_DIR)/stdp.o \
 $(OBJ_DIR)/utils.o \
 $(OBJ_DIR)/snn_generator.o \
+$(OBJ_DIR)/snn_encoder.o \
 $(OBJ_DIR)/toml.o
 
 # CUDA objects
@@ -146,6 +148,10 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/training_rules/%.c
 	mkdir -p $(OBJ_DIR)
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
+$(OBJ_DIR)/%.o: $(SRC_DIR)/encoders/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
 # External lib
 $(OBJ_DIR)/%.o: $(INC_DIR_LIBS)/toml_c/%.c
 	mkdir -p $(OBJ_DIR)
@@ -179,6 +185,12 @@ cpu:
 
 avx512:
 	$(MAKE) USE_CUDA=0 USE_AVX512=1
+
+genetic: $(OBJS)
+	mkdir -p $(OBJ_DIR) $(BIN_DIR)
+	$(CC) $(CC_FLAGS) -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) -c src/main_genetic.c -o $(OBJ_DIR)/main_genetic.o
+	$(LINKER) $(filter-out $(OBJ_DIR)/main.o, $(OBJS)) $(OBJ_DIR)/main_genetic.o -o $(BIN_DIR)/$(GENETIC_EXE) $(LINK_FLAGS)
+	@echo "\nCompilación finalizada\nUso: ./bin/main_genetic <network_conf.toml> <simulation_conf.toml>"
 
 network:
 	mkdir -p $(BIN_DIR)

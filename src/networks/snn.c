@@ -275,23 +275,7 @@ topology_t* load_network_information_in_topology_from_file(simulation_configurat
     return topology;
 }
 
-GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
-
-    // load network information into intermedaite arrays
-    topology_t *topology; 
-
-    // store information of network, neurons and synapses in an intermediate structure
-    if(conf->load_network == 0){ // load from file
-        topology = load_network_information_in_topology_from_file(conf);
-    }
-    else if(conf->load_network == 1){ // generate
-        
-        // TODO
-    }
-    else if(conf->load_network == 2){ // other?
-        
-        // TODO
-    }
+GPU_SNN_t* initialize_network_from_topology(topology_t *topology, simulation_configuration_t *conf){
 
     // get network maximum delay value
     int max_delay = get_max_value(topology->synapses.delay, topology->n_synapses);
@@ -323,11 +307,36 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
     // connect synapses and neurons
     connect_network_input_criteria(snn, topology, conf);
 
-    // deallocate intermeadite structure used for initializing the network
-    // * robar clusters_info antes de liberar topology
+    // steal clusters_info before deallocating topology
     snn->clusters_info = topology->clusters_info;
-    topology->clusters_info = NULL; // evitar que deallocate_topology_str lo libere
+    topology->clusters_info = NULL;
 
+    // return the initialized SNN structure
+    return snn;
+}
+
+GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
+
+    // load network information into intermedaite arrays
+    topology_t *topology; 
+
+    // store information of network, neurons and synapses in an intermediate structure
+    if(conf->load_network == 0){ // load from file
+        topology = load_network_information_in_topology_from_file(conf);
+    }
+    else if(conf->load_network == 1){ // generate
+        
+        // TODO
+    }
+    else if(conf->load_network == 2){ // other?
+        
+        // TODO
+    }
+
+    // delegate to the topology-based initializer
+    GPU_SNN_t *snn = initialize_network_from_topology(topology, conf);
+
+    // deallocate intermediate structure
     deallocate_topology_str(topology);
 
     // return the initialized SNN structure

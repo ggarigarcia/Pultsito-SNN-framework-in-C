@@ -73,6 +73,12 @@ typedef struct GPU_SNN_t {
 /// @return SNN structure initialized
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf);
 
+/// @brief Build a GPU_SNN_t directly from a pre-built topology_t (no file I/O)
+/// @param topology Pointer to a fully initialized topology_t (generated in memory)
+/// @param conf Configuration structure for the simulation
+/// @return SNN structure initialized
+GPU_SNN_t* initialize_network_from_topology(topology_t *topology, simulation_configuration_t *conf);
+
 /// @brief Function to allocate memory for a SNN structure
 /// @param snn SNN network structure
 void deallocate_snn_str(GPU_SNN_t *snn);
