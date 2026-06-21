@@ -114,13 +114,13 @@ int main(int argc, char *argv[]) {
     srand(time(NULL));
 
     // load simulation configuration once
-    printf(" > Loading simulation configuration...\n");
+    printf(" > Loading simulation configuration from '%s'...\n", argv[2]);
     simulation_configuration_t *conf = load_configuration_params_from_toml(argv[2]);
     printf(" > Simulation configuration loaded!\n\n");
     fflush(stdout);
 
     // load dataset once
-    printf(" > Loading dataset...\n");
+    printf(" > Loading dataset from '%s'...\n", conf->dataset);
     GPU_dataset_t *cpu_dataset = load_dataset_from_file_cpu(
         conf->dataset, conf->labels, conf->n_samples, conf);
     if(!cpu_dataset){
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
     fflush(stdout);
 
     // iterate over all genotypes in the file
-    printf(" ============================= \n Processing genotypes \n ============================= \n");
+    printf(" ============================= \n Processing genotypes from '%s'\n ============================= \n", argv[1]);
     for(size_t i = 0; ; i++){
 
         encoding_t *enc = decode_to_snn(argv[1], i);

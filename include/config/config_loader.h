@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 
+struct parcellation_t;  ///< forward declaration (defined in datasets/gifti.h)
+
 /// @brief Structure to store all the configuration for the simulation
 typedef struct simulation_configuration_t {
 
@@ -16,6 +18,8 @@ typedef struct simulation_configuration_t {
     size_t thrN; //  [opt]: 1
     int load_network; // 0: network file provided;  1: generate the network from file data;  2: do not generate the network [opt]: 0
     int load_dataset; // 0: dataset file provided;  1: generate the dataset from file data;  2: do not generate the dataset  [opt]: 0
+    size_t n_neurons; // total neurons (for topology generation) [opt]: 0
+    size_t n_neurons_medium; // medium-layer neurons in clustered topology [opt]: 0
 
     // [simulation] data
     size_t time_steps; // time steps of the simulations
@@ -49,6 +53,12 @@ typedef struct simulation_configuration_t {
     // * conectar clusters info
     char *network_neuron_cluster_file; // file path to load clusters info from
 
+    // [parcellation] section – GIFTI-based parcel topology
+    int enable_parcellation;
+    int parcel_topology;            // flag: use parcel-based cluster distribution
+    char *parcellation_file;        // path to .parc binary
+    char *parcel_bold_file;         // path to .bold binary
+    struct parcellation_t *parcellation; // loaded parcellation data (not owned by config)
 
 } simulation_configuration_t;
 

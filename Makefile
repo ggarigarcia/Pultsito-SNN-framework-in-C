@@ -63,7 +63,8 @@ $(OBJ_DIR)/stdp.o \
 $(OBJ_DIR)/utils.o \
 $(OBJ_DIR)/snn_generator.o \
 $(OBJ_DIR)/snn_encoder.o \
-$(OBJ_DIR)/toml.o
+$(OBJ_DIR)/toml.o \
+$(OBJ_DIR)/gifti_reader.o
 
 # CUDA objects
 GPU_OBJS = \
@@ -129,6 +130,11 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/config/%.c
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/datasets/%.c
+	mkdir -p $(OBJ_DIR)
+	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
+
+# gifti_reader uses -lm for math.h (round, sqrt in results.c indirectly)
+$(OBJ_DIR)/gifti_reader.o: $(SRC_DIR)/datasets/gifti_reader.c
 	mkdir -p $(OBJ_DIR)
 	$(CC) $(CC_FLAGS) -c $< -o $@ -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS)
 

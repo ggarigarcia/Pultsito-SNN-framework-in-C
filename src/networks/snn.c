@@ -8,6 +8,7 @@
 #include "config/config_loader.h"
 #include "networks/snn.h"
 #include "networks/snn_generator.h"
+#include "datasets/gifti.h"
 #include "utils.h"
 
 // internal
@@ -315,22 +316,66 @@ GPU_SNN_t* initialize_network_from_topology(topology_t *topology, simulation_con
     return snn;
 }
 
+/// @brief Build a generator_conf_t from simulation configuration + parcellation
+static generator_conf_t build_generator_conf(simulation_configuration_t *conf) {
+
+    generator_conf_t gconf;
+    memset(&gconf, 0, sizeof(gconf));
+
+    gconf.neuron_type    = conf->neuron_type;
+    gconf.n_input        = conf->input_size;
+    gconf.n_neurons      = conf->n_neurons;    // must be set before call
+    gconf.n_output_neurons = 0;
+
+    gconf.n_clusters     = 0;   // overridden by parcel_topology below
+    gconf.n_neurons_medium = conf->n_neurons_medium;
+    gconf.intra_medium_connectivity    = 0.1f;
+    gconf.intra_cluster_connectivity   = 0.3f;
+    gconf.inter_cluster_connectivity   = 0.1f;
+    gconf.input_medium_ratio           = 5;
+    gconf.medium_cluster_ratio         = 5;
+
+    gconf.parcel_topology   = conf->parcel_topology;
+    gconf.parcellation      = NULL;  // assigned separately if needed
+
+    // neuron ranges (use some sensible defaults)
+    gconf.v_thresh_min = -50.0f;  gconf.v_thresh_max = -50.0f;
+    gconf.v_rest_min   = -65.0f;  gconf.v_rest_max   = -65.0f;
+    gconf.R_min        = 1.0f;    gconf.R_max        = 1.0f;
+    gconf.rft_per_min  = 5;       gconf.rft_per_max  = 5;
+
+    // synapse ranges
+    gconf.w_min = -1.0f;  gconf.w_max = 1.0f;
+    gconf.delay_min = 1;  gconf.delay_max = 1;
+    gconf.lr_min = 0;     gconf.lr_max = 0;
+
+    return gconf;
+}
+
 GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
 
-    // load network information into intermedaite arrays
-    topology_t *topology; 
+    topology_t *topology = NULL;
 
-    // store information of network, neurons and synapses in an intermediate structure
-    if(conf->load_network == 0){ // load from file
+    if (conf->parcel_topology || conf->load_network == 1) {
+        // generate topology from parameters
+        generator_conf_t gconf = build_generator_conf(conf);
+
+        if (conf->parcel_topology) {
+            if (conf->n_neurons == 0) {
+                fprintf(stderr, "Error: n_neurons must be set in [general] when parcel_topology is enabled.\n");
+                exit(1);
+            }
+            gconf.parcellation = conf->parcellation;
+        }
+        topology_t t = generate_topology(&gconf);
+        t.neurons  = initialize_neurons(&gconf);
+        t.synapses = initialize_synapses(&gconf);
+        t.neuron_type = gconf.neuron_type;
+        topology = malloc(sizeof(topology_t));
+        *topology = t;
+    } else {
+        // load from file (existing behaviour)
         topology = load_network_information_in_topology_from_file(conf);
-    }
-    else if(conf->load_network == 1){ // generate
-        
-        // TODO
-    }
-    else if(conf->load_network == 2){ // other?
-        
-        // TODO
     }
 
     // delegate to the topology-based initializer
@@ -338,6 +383,8 @@ GPU_SNN_t* initialize_network_cpu(simulation_configuration_t *conf){
 
     // deallocate intermediate structure
     deallocate_topology_str(topology);
+
+    // conf->parcellation is owned by main() – not freed here
 
     // return the initialized SNN structure
     return snn;

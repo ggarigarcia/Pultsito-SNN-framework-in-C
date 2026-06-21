@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 // public headers
 #include "simulations/results.h"
 #include "config/config_loader.h"
 #include "utils.h"
 #include "networks/snn_generator.h" // * clusters_info para init batch results cpu
+#include "networks/snn.h"           // GPU_SNN_t
+#include "datasets/gifti.h"         // parcellation_t
 
 GPU_results_t** initialize_batch_results_array(simulation_configuration_t *conf, size_t N, size_t batch_size, size_t T, size_t frq, size_t n_results, clusters_info_t *ci){
 
@@ -58,7 +61,7 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
     // copiar algunos elementos de clusters_info. renta copiar clusters_info completo y ya??
     results->matrix_t->n_clusters = ci->n_clusters;
 
-    results->matrix_t->n_timesteps = 10; // TODO argumentu bezela pasa
+    results->matrix_t->n_timesteps = conf->time_steps;
     results->matrix_t->current_step = 0;
 
     results->matrix_t->neuron_to_cluster = calloc(ci->n_neurons_cluster + ci->n_neurons_medium, sizeof(int)); // * INTEGER!!
@@ -297,4 +300,131 @@ double get_results_size(size_t N, size_t nS, size_t T){
         sizeof(double) * 7 // variables to store execution times
         ) / 8.0
     );
+}
+
+/* ..................................................................
+ * Parcel comparison: cluster spike matrix vs parcel-averaged BOLD
+ * .................................................................. */
+
+/// @brief Compute Pearson correlation between two float arrays of length n.
+static double pearson_r(const float *x, const float *y, size_t n) {
+    double sum_x = 0, sum_y = 0, sum_xx = 0, sum_yy = 0, sum_xy = 0;
+    for (size_t i = 0; i < n; i++) {
+        double xi = (double)x[i];
+        double yi = (double)y[i];
+        sum_x  += xi;    sum_y  += yi;
+        sum_xx += xi*xi; sum_yy += yi*yi;
+        sum_xy += xi*yi;
+    }
+    double num = n * sum_xy - sum_x * sum_y;
+    double den = sqrt((n * sum_xx - sum_x * sum_x) * (n * sum_yy - sum_y * sum_y));
+    return (den == 0.0) ? 0.0 : num / den;
+}
+
+void store_parcel_comparison(GPU_results_t **results, GPU_SNN_t *snn,
+                              parcellation_t *parc,
+                              simulation_configuration_t *conf,
+                              size_t n_batches)
+{
+    if (!parc || !parc->parcel_bold) {
+        printf(" > store_parcel_comparison: no BOLD data available.\n");
+        return;
+    }
+
+    size_t T = conf->time_steps;
+    size_t n_cl = parc->n_parcels;
+    size_t B = conf->batch_size;
+
+    // 1. Aggregate spikes per cluster across all batches
+    //    cluster_spk[t * n_cl + c] = total spikes in cluster c at timestep t
+    float *cluster_spk = calloc(T * n_cl, sizeof(float));
+
+    for (size_t b = 0; b < n_batches; b++) {
+        cluster_spk_buffer_t *mtx = results[b]->matrix_t;
+        if (!mtx) continue;
+        size_t mtx_n_cl = mtx->n_clusters;
+        if (mtx_n_cl != n_cl) {
+            printf("   Warning: batch %zu has %zu clusters, expected %zu\n",
+                   b, mtx_n_cl, n_cl);
+            continue;
+        }
+        // mtx->matrix layout: [n_timesteps * n_clusters * batch_size]
+        for (size_t t = 0; t < T && t < mtx->n_timesteps; t++) {
+            for (size_t c = 0; c < n_cl; c++) {
+                float sum = 0;
+                for (size_t e = 0; e < B; e++) {
+                    sum += (float)mtx->matrix[t * n_cl * B + c * B + e];
+                }
+                cluster_spk[t * n_cl + c] += sum;
+            }
+        }
+    }
+
+    // 2. Write raw matrices
+    FILE *f = fopen("test/out/cluster_spikes_matrix.txt", "w");
+    if (f) {
+        for (size_t t = 0; t < T; t++) {
+            for (size_t c = 0; c < n_cl; c++)
+                fprintf(f, "%g%c", cluster_spk[t * n_cl + c], c+1<n_cl?' ':'\n');
+        }
+        fclose(f);
+    }
+
+    f = fopen("test/out/parcel_bold_matrix.txt", "w");
+    if (f) {
+        for (size_t t = 0; t < T && t < parc->n_timepoints; t++) {
+            for (size_t c = 0; c < n_cl; c++)
+                fprintf(f, "%g%c", parc->parcel_bold[c * parc->n_timepoints + t],
+                        c+1<n_cl?' ':'\n');
+        }
+        fclose(f);
+    }
+
+    size_t minT = T < parc->n_timepoints ? T : parc->n_timepoints;
+
+    // 3. Write side-by-side + Pearson correlation
+    f = fopen("test/out/parcel_comparison.txt", "w");
+    if (f) {
+        fprintf(f, "# timestep");
+        for (size_t c = 0; c < n_cl; c++)
+            fprintf(f, "  spk_c%zu  bold_c%zu", c, c);
+        fprintf(f, "\n");
+
+        for (size_t t = 0; t < minT; t++) {
+            fprintf(f, "%9zu", t);
+            for (size_t c = 0; c < n_cl; c++) {
+                fprintf(f, "  %7.1f  %7.4f",
+                        cluster_spk[t * n_cl + c],
+                        parc->parcel_bold[c * parc->n_timepoints + t]);
+            }
+            fprintf(f, "\n");
+        }
+        fclose(f);
+    }
+
+    // 4. Correlation per cluster
+    f = fopen("test/out/parcel_correlation.txt", "w");
+    if (f) {
+        fprintf(f, "# cluster  pearson_r\n");
+        for (size_t c = 0; c < n_cl; c++) {
+            // build the two time-series for this cluster
+            float *spk_ts = malloc(minT * sizeof(float));
+            float *bold_ts = malloc(minT * sizeof(float));
+            for (size_t t = 0; t < minT; t++) {
+                spk_ts[t]  = cluster_spk[t * n_cl + c];
+                bold_ts[t] = parc->parcel_bold[c * parc->n_timepoints + t];
+            }
+            double r = pearson_r(spk_ts, bold_ts, minT);
+            fprintf(f, "%9zu  %8.5f\n", c, r);
+            free(spk_ts);
+            free(bold_ts);
+        }
+        fclose(f);
+    }
+
+    printf(" > Parcel comparison written to test/out/parcel_comparison.txt\n");
+    printf(" > Correlations written to test/out/parcel_correlation.txt\n");
+    fflush(stdout);
+
+    free(cluster_spk);
 }

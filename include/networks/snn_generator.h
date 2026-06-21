@@ -66,6 +66,8 @@ Configuration file format:
 extern "C" {
 #endif
 
+typedef struct parcellation_t parcellation_t;
+
 /// @brief Structure to store all the data relative to the generation configuration
 typedef struct generator_conf_t {
 
@@ -121,6 +123,10 @@ typedef struct generator_conf_t {
     size_t input_medium_ratio;
     size_t medium_cluster_ratio;
 
+    // parcel-based topology
+    int parcel_topology;            ///< flag: distribute clusters proportionally
+    parcellation_t *parcellation;   ///< parcellation data (owned externally)
+
 } generator_conf_t;
 
 /// @brief Structure to store all the data relative to the neurons
@@ -175,6 +181,9 @@ typedef struct clusters_info_t {
     size_t *medium_connections;
     size_t *intra_connections;
     size_t *inter_connections;
+
+    // parcel distribution (optional, set before create_clusters)
+    size_t *parcel_weights;     ///< [n_clusters] weight for proportional distribution, or NULL
 
 } clusters_info_t;
 typedef struct topology_t {

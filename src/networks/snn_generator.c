@@ -7,9 +7,11 @@
 #include <string.h>
 #include <malloc.h>
 #include <stddef.h>
+#include <math.h>
 
 #include "toml_c/toml.h"
 #include "networks/snn_generator.h"
+#include "datasets/gifti.h"
 
 
 /* [PRIVATE] */
@@ -756,6 +758,7 @@ topology_t generate_non_layered_topology(generator_conf_t *conf){
     
     // initialize and return topology
     topology_t topology;
+    memset(&topology, 0, sizeof(topology));
     topology.n_neurons = n_neurons;
     topology.n_input = n_input;
     topology.n_output_neurons = n_output_neurons;
@@ -794,22 +797,45 @@ int create_clusters(clusters_info_t *ci) {
     ci->cluster_start = malloc((ci->n_clusters) * sizeof(*ci->cluster_start));
     ci->neuron_cluster = malloc((ci->n_neurons_cluster) * sizeof(*ci->neuron_cluster));
 
-     
-    size_t default_cluster_size = ci->n_neurons_cluster / ci->n_clusters;
-    size_t remainder = ci->n_neurons_cluster % ci->n_clusters;
     size_t neuron_count = 0;
 
-    for(size_t i = 0; i < ci->n_clusters; i++) {
-        
-        // uneko clusterraren tamaina kalkulatu
-        ci->cluster_start[i] = neuron_count; 
-        ci->cluster_sizes[i] = default_cluster_size + (i < remainder ? 1 : 0);
+    if (ci->parcel_weights) {
+        // proportional distribution by parcel vertex count
+        size_t total_weight = 0;
+        for (size_t i = 0; i < ci->n_clusters; i++)
+            total_weight += ci->parcel_weights[i];
 
-        neuron_count += ci->cluster_sizes[i];
+        size_t assigned = 0;
+        for (size_t i = 0; i < ci->n_clusters; i++) {
+            ci->cluster_start[i] = neuron_count;
+            if (i < ci->n_clusters - 1) {
+                ci->cluster_sizes[i] = (size_t)round(
+                    (double)ci->n_neurons_cluster * ci->parcel_weights[i] / total_weight);
+            } else {
+                // last cluster gets the remainder
+                ci->cluster_sizes[i] = ci->n_neurons_cluster - assigned;
+            }
+            assigned += ci->cluster_sizes[i];
+            neuron_count += ci->cluster_sizes[i];
 
-        // neuronei clusterra esleitu
-        size_t end = ci->cluster_start[i] + ci->cluster_sizes[i];
-        for(size_t j = ci->cluster_start[i]; j < end; j++) ci->neuron_cluster[j] = i;
+            size_t end = ci->cluster_start[i] + ci->cluster_sizes[i];
+            for (size_t j = ci->cluster_start[i]; j < end; j++)
+                ci->neuron_cluster[j] = i;
+        }
+    } else {
+        // uniform distribution (original)
+        size_t default_cluster_size = ci->n_neurons_cluster / ci->n_clusters;
+        size_t remainder = ci->n_neurons_cluster % ci->n_clusters;
+
+        for(size_t i = 0; i < ci->n_clusters; i++) {
+            ci->cluster_start[i] = neuron_count; 
+            ci->cluster_sizes[i] = default_cluster_size + (i < remainder ? 1 : 0);
+            neuron_count += ci->cluster_sizes[i];
+
+            size_t end = ci->cluster_start[i] + ci->cluster_sizes[i];
+            for(size_t j = ci->cluster_start[i]; j < end; j++)
+                ci->neuron_cluster[j] = i;
+        }
     }
 
     if(neuron_count != ci->n_neurons_cluster) {
@@ -1095,7 +1121,13 @@ topology_t generate_clustered_topology(generator_conf_t *conf) {
 
 
     // 1.2 CLUSTERRAK sortu
-    clusters_info->n_clusters = conf->n_clusters;
+    if (conf->parcel_topology && conf->parcellation) {
+        clusters_info->n_clusters = conf->parcellation->n_parcels;
+        clusters_info->parcel_weights = conf->parcellation->n_parcel_vertices;
+    } else {
+        clusters_info->n_clusters = conf->n_clusters;
+        clusters_info->parcel_weights = NULL;
+    }
     clusters_info->n_neurons_cluster = n_neurons - clusters_info->n_neurons_medium;
     create_clusters(clusters_info);
 
@@ -1133,6 +1165,7 @@ topology_t generate_clustered_topology(generator_conf_t *conf) {
     
     // 4. rellenar topology_t 
     topology_t topology;
+    memset(&topology, 0, sizeof(topology));
      
     topology.clusters_info = clusters_info;
     
@@ -1319,11 +1352,13 @@ topology_t generate_topology(generator_conf_t *conf){
 
     topology_t topology;
 
-    if(conf->layered == 1)
+    if(conf->layered == 1) {
         topology = generate_layered_topology(conf);
-    else
-        //topology = generate_non_layered_topology(conf);
-        //topology = generate_clustered_topology(conf, 4, 0.5); // todo: añadir argumentos a conf
+    } else if(conf->n_clusters > 0 || conf->parcel_topology) {
+        topology = generate_clustered_topology(conf);
+    } else {
+        topology = generate_non_layered_topology(conf);
+    }
 
     return topology;
 }

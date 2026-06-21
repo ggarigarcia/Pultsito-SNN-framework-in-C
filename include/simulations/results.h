@@ -7,6 +7,8 @@ extern "C" {
 
 typedef struct simulation_configuration_t simulation_configuration_t;
 typedef struct clusters_info_t clusters_info_t;
+typedef struct GPU_SNN_t GPU_SNN_t;
+struct parcellation_t;
 
 // * Matriz circular de spikes generados por cluster
 typedef struct cluster_spk_buffer_t {
@@ -113,6 +115,17 @@ void store_generated_spikes(GPU_results_t *results, simulation_configuration_t *
 /// @param n_batches Number of batches simulated
 /// @param time_steps Total timesteps simulated per batch (for labeling)
 void display_cluster_spike_matrices(GPU_results_t **results, size_t n_batches, size_t time_steps);
+
+/// @brief Compare cluster spike matrix with parcel-averaged BOLD (Pearson + raw)
+/// @param results  Array of per-batch result structures
+/// @param snn      The SNN (provides cluster mapping via clusters_info)
+/// @param parc     Parcellation data with per-parcel BOLD
+/// @param conf     Simulation configuration (for file paths)
+/// @param n_batches Number of batches simulated
+void store_parcel_comparison(GPU_results_t **results, GPU_SNN_t *snn,
+                             struct parcellation_t *parc,
+                             simulation_configuration_t *conf,
+                             size_t n_batches);
 
 #ifdef __cplusplus
 }

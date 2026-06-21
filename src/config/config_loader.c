@@ -16,7 +16,8 @@
 simulation_configuration_t* load_general_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
 
     // [general] section
-    toml_value_t neuron_type, n_process, cuda, multigpu, learn, batch_size, thrN, load_network, load_dataset;
+    toml_value_t neuron_type, n_process, cuda, multigpu, learn, batch_size, thrN, load_network, load_dataset,
+                  n_neurons, n_neurons_medium;
 
     /* read [general] section, and set default values in case data is not provided */
     neuron_type   =  toml_table_int(tbl, "neuron_type"); // neuron type (0: combined, 1: LIF)
@@ -28,6 +29,8 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
     thrN          =  toml_table_int(tbl, "thrN");
     load_network  =  toml_table_int(tbl, "load_network");
     load_dataset  =  toml_table_int(tbl, "load_dataset");
+    n_neurons     =  toml_table_int(tbl, "n_neurons");
+    n_neurons_medium = toml_table_int(tbl, "n_neurons_medium");
 
 
     if(!neuron_type.ok)
@@ -48,6 +51,10 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
         load_network.u.i = 0; // load
     if(!load_dataset.ok)
         load_dataset.u.i = 0; // load
+    if(!n_neurons.ok)
+        n_neurons.u.i = 0;
+    if(!n_neurons_medium.ok)
+        n_neurons_medium.u.i = 0;
 
 
     // load information in configuration struct
@@ -60,6 +67,8 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
     conf->thrN         = (size_t)thrN.u.i;
     conf->load_network = load_network.u.i;
     conf->load_dataset = load_dataset.u.i;
+    conf->n_neurons    = (size_t)n_neurons.u.i;
+    conf->n_neurons_medium = (size_t)n_neurons_medium.u.i;
 
     return conf;
 }
@@ -129,17 +138,15 @@ simulation_configuration_t* load_dataset_section_from_toml(simulation_configurat
             exit(1);   
         }
     }
-    // [TODO]
     else if(conf->load_dataset == 1){
-
         printf(" > load_dataset = 1 not implemented yet. Exiting.\n");
+        exit(1);
     }
     else if(conf->load_dataset == 2){
-
-        printf(" > load_dataset = 2 not implemented yet. Exiting.\n");
+        // do not load dataset – will be NULL in simulation
     }
 
-    if(!n_samples.ok){
+    if(!n_samples.ok && conf->load_dataset != 2){
         
         printf(" >> The number of samples in the dataset must be provided when load_dataset is 1! Exiting\n");
         fflush(stdout);
@@ -157,7 +164,7 @@ simulation_configuration_t* load_dataset_section_from_toml(simulation_configurat
         epochs.u.i = 1;
     }
 
-    if(!input_size.ok && conf->load_dataset == 0){
+    if(!input_size.ok && conf->load_dataset == 0 && !conf->parcel_topology){
         printf(" >> Number of features in the dataset not provided! Exiting.\n");
         fflush(stdout);
         exit(1);
@@ -312,21 +319,56 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
         }
     }
 
-    // [TODO]
     else if(conf->load_network == 1){
 
-        printf(" > load_network = 1 not implemented yet. Exiting.\n");
+        printf(" > load_network = 1: topology will be generated from parameters.\n");
     }
-
-    // [TODO]
     else if(conf->load_network == 2){
-
-        printf(" > load_network = 2 not implemented yet. Exiting.\n");
+        // do not load or generate network – skip network file checks
     }
     return conf;
 }
 
 
+
+simulation_configuration_t* load_parcellation_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
+
+    toml_value_t enabled, parc_file, bold_file, parcel_topology;
+
+    if (!tbl) {
+        conf->enable_parcellation = 0;
+        conf->parcel_topology = 0;
+        conf->parcellation_file = NULL;
+        conf->parcel_bold_file = NULL;
+        return conf;
+    }
+
+    enabled         = toml_table_bool(tbl, "enabled");
+    parc_file       = toml_table_string(tbl, "parcellation_file");
+    bold_file       = toml_table_string(tbl, "parcel_bold_file");
+    parcel_topology = toml_table_bool(tbl, "parcel_topology");
+
+    if (!enabled.ok)          enabled.u.i = 0;
+    if (!parcel_topology.ok)  parcel_topology.u.i = enabled.u.i;
+
+    if (enabled.u.i) {
+        if (!parc_file.ok) {
+            printf(" >> [parcellation] parcellation_file required when enabled!\n");
+            exit(1);
+        }
+        if (!bold_file.ok) {
+            printf(" >> [parcellation] parcel_bold_file required when enabled!\n");
+            exit(1);
+        }
+    }
+
+    conf->enable_parcellation = enabled.u.i;
+    conf->parcel_topology     = parcel_topology.u.i;
+    conf->parcellation_file   = parc_file.ok ? strdup(parc_file.u.s) : NULL;
+    conf->parcel_bold_file    = bold_file.ok ? strdup(bold_file.u.s) : NULL;
+
+    return conf;
+}
 
 /* [PUBLIC] */
 
@@ -352,6 +394,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     tbl_dataset = toml_table_table(tbl, "dataset");
     tbl_output = toml_table_table(tbl, "output");
     tbl_network = toml_table_table(tbl, "network");
+    toml_table_t *tbl_parcellation = toml_table_table(tbl, "parcellation");
 
     // load sections
     conf = load_general_section_from_toml(conf, tbl_general);
@@ -359,6 +402,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     conf = load_dataset_section_from_toml(conf, tbl_dataset);
     conf = load_output_section_from_toml(conf, tbl_output);
     conf = load_network_section_from_toml(conf, tbl_network);
+    conf = load_parcellation_section_from_toml(conf, tbl_parcellation);
     
     // return configuration struct
     return conf;
