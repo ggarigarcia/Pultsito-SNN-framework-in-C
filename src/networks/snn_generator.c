@@ -1121,13 +1121,9 @@ topology_t generate_clustered_topology(generator_conf_t *conf) {
 
 
     // 1.2 CLUSTERRAK sortu
-    if (conf->parcel_topology && conf->parcellation) {
-        clusters_info->n_clusters = conf->parcellation->n_parcels;
-        clusters_info->parcel_weights = conf->parcellation->n_parcel_vertices;
-    } else {
-        clusters_info->n_clusters = conf->n_clusters;
-        clusters_info->parcel_weights = NULL;
-    }
+    clusters_info->n_clusters = conf->n_clusters;
+    clusters_info->parcel_weights = NULL;
+
     clusters_info->n_neurons_cluster = n_neurons - clusters_info->n_neurons_medium;
     create_clusters(clusters_info);
 
@@ -1354,7 +1350,7 @@ topology_t generate_topology(generator_conf_t *conf){
 
     if(conf->layered == 1) {
         topology = generate_layered_topology(conf);
-    } else if(conf->n_clusters > 0 || conf->parcel_topology) {
+    } else if(conf->n_clusters > 0 || conf->parcel_topology) { // TODO: cambiar el flag
         topology = generate_clustered_topology(conf);
     } else {
         topology = generate_non_layered_topology(conf);

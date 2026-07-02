@@ -26,58 +26,76 @@ int main(int argc, char *argv[]) {
     printf(" > Configuration file loaded!\n\n");
     fflush(stdout);
 
-    // load parcellation data BEFORE network init (required for topology)
-    parcellation_t *parcellation_data = NULL;
-    if (conf->enable_parcellation) {
-        printf(" > Loading parcellation...\n");
-        parcellation_data = load_parcellation(conf->parcellation_file);
-        if (!parcellation_data) {
-            printf(" > Error loading parcellation! Exiting.\n");
-            return 1;
-        }
-        load_parcel_bold(parcellation_data, conf->parcel_bold_file);
-        if (!parcellation_data->parcel_bold) {
-            printf(" > Error loading BOLD data! Exiting.\n");
-            free_parcellation(parcellation_data);
-            return 1;
-        }
-        conf->parcellation = parcellation_data;
-        printf(" > Parcellation loaded (%zu parcels, %zu timepoints)\n",
-               parcellation_data->n_parcels, parcellation_data->n_timepoints);
-        fflush(stdout);
-    }
-
-    // initialize network (uses conf->parcellation if parcel_topology is set)
+    // initialize network
     printf(" > Initializing network...\n");
     GPU_SNN_t *cpu_snn = initialize_network_cpu(conf);
     printf(" > Network initialized!\n");
     fflush(stdout);
 
-    // load dataset (optional – may be null for stimulus-free testing)
+    // load dataset
     printf(" > Loading dataset... \n");
-    GPU_dataset_t *cpu_dataset = NULL;
-    if (conf->dataset) {
-        cpu_dataset = load_dataset_from_file_cpu(conf->dataset, conf->labels, conf->n_samples, conf);
-        if(!cpu_dataset){
-            printf(" > Error loading dataset! Exiting.\n");
-            fflush(stdout);
-            return 1;
-        }
-        printf(" > Dataset loaded!\n");
-    } else {
-        printf(" > No dataset provided, running with zero input.\n");
+    GPU_dataset_t *cpu_dataset = load_dataset_from_file_cpu(conf->dataset, conf->labels, conf->n_samples, conf);
+    if(!cpu_dataset){
+        printf(" > Error loading dataset! Exiting.\n");
+        fflush(stdout);
+        return 1;
     }
+    printf(" > Dataset loaded!\n");
+    
     fflush(stdout);
 
+    // initialize results struct
+    /*printf(" > Initializing results struct...\n");
+    GPU_results_t *cpu_results = initialize_batch_results_cpu(conf, cpu_snn->n_neurons, conf->batch_size, 1, 1);
+    printf(" > Results struct initialized!\n");
+    fflush(stdout);
+
+
+    // simulate in CPU
+    if(conf->cuda == 0){
+
+        printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
+        simulate_batches(cpu_snn, cpu_dataset, conf, cpu_results);
+    }
+    // simulate in GPU if device is founded and CUDA is defined
+    else{
+
+        #if defined CUDA
+        {
+            // get GPU information
+            cuda_info_t *cuda_info = getGPUProperties();
+
+            // configure GPU simulation
+            configure_cuda_simulation(cuda_info, cpu_snn, cpu_dataset, conf);
+
+            // simulate
+            cpu_results = simulate_batches_GPU(cuda_info, cpu_snn, cpu_dataset, conf);
+        }
+        // no device
+        #else
+        {
+            printf(" > No cuda defice founded, simulating in CPU!\n");
+            printf("\n ============================= \n ==== Starting simulation ==== \n ============================= \n");
+            simulate_batches(cpu_snn, cpu_dataset, conf, cpu_results);
+        }
+        #endif
+    }*/
+
+    //deallocate_snn_str(cpu_snn);
+    //deallocate_dataset_str(cpu_dataset);
+    //deallocate_results_str(cpu_results);
+
+    // define 
+    //deallocate_memory();
+    // called when simulation finishes
+
     // compute number of batches
-    size_t n_batches = 1, r_samples = 0;
+    size_t n_batches, r_samples;
     size_t b;
 
-    if (cpu_dataset) {
-        n_batches = cpu_dataset->n_samples / conf->batch_size;
-        r_samples = cpu_dataset->n_samples % conf->batch_size;
-        n_batches = r_samples > 0 ? n_batches + 1 : n_batches;
-    }
+    n_batches = cpu_dataset->n_samples / conf->batch_size;
+    r_samples = cpu_dataset->n_samples % conf->batch_size;
+    n_batches = r_samples > 0 ? n_batches + 1 : n_batches; // one more batch if there are remaining sample
 
     // [CPU]
 #ifndef CUDA
@@ -85,39 +103,49 @@ int main(int argc, char *argv[]) {
     // copy non-constant snn data for parallel batch simulation
     init_batch_snn(cpu_snn, conf);
 
-    // initialize struct to store batch results
+    // initialize results structure
     GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
 
     // loop over batches and simulate
     for(b = 0; b < n_batches; b++){
         
+        // print for feedback
         if((b+1) % 100 == 0){
             printf(" Simulating batch %zu\n", b+1);
             fflush(stdout);
         }
 
+        // simulate batch
         simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0);
     }
 
 #else
 
     // [GPU]
+    // init cuda_info
     cuda_info_t *cuda_info = configure_cuda_simulation(cpu_snn, cpu_dataset, conf);
     printf(" Cuda simulation configured\n");
     fflush(stdout);
 
+    // move data to the GPU
     GPU_SNN_t **gpu_snn = cpy_SNN2GPU(cpu_snn, cuda_info, conf);
+
+    // move dataset to the GPU
     GPU_dataset_t **gpu_dataset = cpy_dataset2GPU(cpu_dataset, cuda_info);
 
+    // initialize results structure
     GPU_results_t **results = initialize_batch_results_array(conf, cpu_snn->n_neurons, conf->batch_size, 1, 1, n_batches);
 
+    // call simulation
     for(b = 0; b < n_batches; b++){
         
+        // print for feedback
         if((b+1) % 100 == 0){
             printf(" Simulating batch %zu\n", b+1);
             fflush(stdout);
         }
 
+        // simulate batch
         simulate_batch_GPU(results[b], gpu_snn, gpu_dataset, conf, cuda_info, b);
     }
 #endif
@@ -126,18 +154,6 @@ int main(int argc, char *argv[]) {
 
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
     store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);
-
-    // parcel comparison
-    if (parcellation_data) {
-        store_parcel_comparison(results, cpu_snn, parcellation_data, conf, n_batches);
-    }
-
-    // cleanup
-    if (cpu_dataset)     deallocate_dataset_str(cpu_dataset);
-    if (parcellation_data) {
-        conf->parcellation = NULL;  // avoid dangling pointer
-        free_parcellation(parcellation_data);
-    }
 
     return 0;
 }

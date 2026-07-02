@@ -21,15 +21,9 @@ static void free_topology_internals(topology_t *topology){
     if(topology->synapses.lr)      free(topology->synapses.lr);
 }
 
-static int process_genotype(encoding_t *enc, simulation_configuration_t *conf,
-                            GPU_dataset_t *cpu_dataset, size_t genotype_idx){
+// crear fichero de config de network (usado en snn_generator_main.c) a partir de genotipo
+static generator_conf_t *generate_network_conf_file(simulation_configuration_t *conf, encoding_t *enc) {
 
-    printf("\n ========== Genotype %zu ========== \n", genotype_idx);
-    printf(" > %zu neurons, %zu inputs, %zu medium, %zu clusters\n",
-           enc->n_neurons, enc->n_input_neurons, enc->n_neurons_medium, enc->n_clusters);
-    fflush(stdout);
-
-    // build generator configuration from encoding + defaults
     generator_conf_t *gen_conf = (generator_conf_t*)calloc(1, sizeof(generator_conf_t));
 
     gen_conf->n_input       = enc->n_input_neurons;
@@ -57,23 +51,29 @@ static int process_genotype(encoding_t *enc, simulation_configuration_t *conf,
     gen_conf->input_medium_ratio = 5;
     gen_conf->medium_cluster_ratio = 5;
     gen_conf->store_in_file = 0;
+    
 
-    // generate topology
-    topology_t topology = generate_clustered_topology(gen_conf);
-    topology.neurons = initialize_neurons(gen_conf);
-    topology.synapses = initialize_synapses(gen_conf);
+    return gen_conf;
+}
 
-    // build SNN
-    GPU_SNN_t *cpu_snn = initialize_network_from_topology(&topology, conf);
+static int process_genotype(encoding_t *genotype, simulation_configuration_t *conf,
+                            GPU_dataset_t *cpu_dataset, size_t genotype_idx){
 
+    printf(" > > Processing genotype %zu ========== \n", genotype_idx);
+    fflush(stdout);
+
+    // build generator configuration from encoding + defaults
+    // TODO: quitar esta morralla
+    /*
     // simulate
+    // TODO: estos no cambian no??
     size_t n_batches = cpu_dataset->n_samples / conf->batch_size;
     size_t r_samples = cpu_dataset->n_samples % conf->batch_size;
     n_batches = r_samples > 0 ? n_batches + 1 : n_batches;
 
-    init_batch_snn(cpu_snn, conf);
+    init_batch_snn(cpu_snn, conf); // TODO: entender funcionamiento
 
-    GPU_results_t **results = initialize_batch_results_array(
+    GPU_results_t **results = initialize_batch_results_array( // TODO: entender funcionamiento
         conf, cpu_snn->n_neurons, conf->batch_size,
         conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
 
@@ -82,16 +82,17 @@ static int process_genotype(encoding_t *enc, simulation_configuration_t *conf,
             printf(" Simulating batch %zu (genotype %zu)\n", b+1, genotype_idx);
             fflush(stdout);
         }
-        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0);
+        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0); // TODO: entender funcionamiento
     }
 
     // store results
+    // TODO: no es necesario guardar resultados??
     display_cluster_spike_matrices(results, n_batches, conf->time_steps);
     store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
     store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);
 
     // cleanup per-genotype resources
-    free_topology_internals(&topology);
+    free_topology_internals(&topology); // TODO: entender
 
     for(size_t b = 0; b < n_batches; b++){
         deallocate_results_str(results[b]);
@@ -99,10 +100,46 @@ static int process_genotype(encoding_t *enc, simulation_configuration_t *conf,
     free(results);
 
     deallocate_snn_str(cpu_snn);
-    free(gen_conf);
+    free(gconf);
+    */
+
+    // CREAR NETWORK (LO QUE SE HACE EN SNN_GENERATOR_MAIN.C)
+    generator_conf_t *gconf = generate_network_conf_file(conf, genotype); // gconf = fichero general de NETWORK
+    topology_t t = generate_clustered_topology(gconf);
+    t.neurons = initialize_neurons(gconf);
+    t.synapses = initialize_synapses(gconf);
+
+    topology_t *topology = malloc(sizeof(topology_t));
+    *topology = t;    
+    
+    // init network
+    GPU_SNN_t *cpu_snn = initialize_network_from_topology(topology, conf);
+    deallocate_topology_str(topology);
+    // printf(" > Network initialized!\n");
+
+    // TODO: irrelevante calcular batches no?? usar constantes
+    size_t n_batches = cpu_dataset->n_samples / conf->batch_size;
+    size_t r_samples = cpu_dataset->n_samples % conf->batch_size;
+    n_batches = r_samples > 0 ? n_batches + 1 : n_batches;
+
+    init_batch_snn(cpu_snn, conf); // TODO: entender funcionamiento
+
+    GPU_results_t **results = initialize_batch_results_array( // TODO: entender funcionamiento
+        conf, cpu_snn->n_neurons, conf->batch_size,
+        conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
+
+    for(size_t b = 0; b < n_batches; b++){
+        if((b+1) % 100 == 0){
+            printf(" Simulating batch %zu (genotype %zu)\n", b+1, genotype_idx);
+            fflush(stdout);
+        }
+        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0); // TODO: entender funcionamiento
+    }
 
     return 0;
 }
+
+/* MAIN */
 
 int main(int argc, char *argv[]) {
 
@@ -132,6 +169,31 @@ int main(int argc, char *argv[]) {
     printf(" > Dataset loaded!\n");
     fflush(stdout);
 
+    // load genotypes
+    printf("Reading genotypes from file %s", argv[1]);
+    size_t n_genotypes;
+    encoding_t *genotypes = read_genotypes(argv[1], &n_genotypes);
+    if(genotypes == NULL){
+        printf(" > Error loading genotypes! Exiting\n");
+        fflush(stdout);
+        free(conf);
+        deallocate_dataset_str(cpu_dataset);
+        return 1;
+    }
+    printf(" > Genotypes read!\n");
+
+    // process genotypes
+    printf("Processing genotypes\n");
+    for(size_t i = 0; i < n_genotypes; i++){
+        
+        int ret = process_genotype(&genotypes[i], conf, cpu_dataset, i);
+
+        if(ret != 0) {
+            printf("Error processing genotype %zu, skipping\n", i);
+        }
+    }
+
+    /*
     // iterate over all genotypes in the file
     printf(" ============================= \n Processing genotypes from '%s'\n ============================= \n", argv[1]);
     for(size_t i = 0; ; i++){
@@ -147,6 +209,7 @@ int main(int argc, char *argv[]) {
             fflush(stdout);
         }
     }
+        */
 
     // cleanup shared resources
     deallocate_dataset_str(cpu_dataset);

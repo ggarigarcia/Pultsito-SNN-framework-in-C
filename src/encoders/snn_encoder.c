@@ -247,3 +247,46 @@ encoding_t *decode_to_snn(const char *genotypes, size_t index) {
 
     return encoding_info;
 }
+
+encoding_t *read_genotypes(const char *genotypes_file, size_t *n_genotypes) {
+    
+    // abrir fichero genotypes
+    FILE *f = fopen(genotypes_file, "r");
+    if(f == NULL) {
+        printf("Error opening genotypes file \"%s\"\n", genotypes_file);
+        return NULL;
+    }
+
+    // leer
+    fscanf(f, "%zu", n_genotypes);
+    if(n_genotypes == 0) {
+        printf("Number of genotypes in genotypes file is ZERO\n");
+        fclose(f);
+        return NULL;
+    }
+
+    encoding_t *genotypes = malloc(*n_genotypes * sizeof(encoding_t));
+    if(genotypes == NULL) {
+        printf("Error creating genotypes array: malloc\n");
+        fclose(f);
+        return NULL;
+    }
+
+    for(size_t i = 0; i < *n_genotypes; i++) {
+        float tmp[4];
+
+        fscanf(f, "%f, %f, %f, %f, %f, %f, %f",
+               &tmp[0], &tmp[1], &tmp[2],
+               &genotypes[i].intra_medium_connectivity, &tmp[3],
+               &genotypes[i].intra_cluster_connectivity,
+               &genotypes[i].inter_cluster_connectivity);
+
+        genotypes[i].n_neurons = (size_t)tmp[0];
+        genotypes[i].n_input_neurons = (size_t)tmp[1];
+        genotypes[i].n_neurons_medium = (size_t)tmp[2];
+        genotypes[i].n_clusters = (size_t)tmp[3];
+    }
+
+    fclose(f);
+    return genotypes;
+}
