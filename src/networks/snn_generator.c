@@ -1387,7 +1387,7 @@ synapses_t initialize_synapses(generator_conf_t *conf){
 
     synapses_t synapses;
 
-    printf(" n_synapses = %zu\n", conf->n_synapses);
+    //printf(" n_synapses = %zu\n", conf->n_synapses);
     // allocate memory for synapses properties
     synapses.w     = (float*)malloc(conf->n_synapses * sizeof(float));
     synapses.delay = (int*)malloc(conf->n_synapses * sizeof(int));

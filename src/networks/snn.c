@@ -283,7 +283,7 @@ GPU_SNN_t* initialize_network_from_topology(topology_t *topology, simulation_con
 
     // allocate memory for the SNN structure arrays
     GPU_SNN_t* snn = allocate_memory_for_SNN(topology->n_neurons, topology->n_input, topology->n_synapses, max_delay + 1, conf);
-    printf(" Memory allocated");
+    //printf(" Memory allocated");
     fflush(stdout);
 
     // load information from intermediate structure to the SNN

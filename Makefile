@@ -196,7 +196,7 @@ genetic: $(OBJS)
 	mkdir -p $(OBJ_DIR) $(BIN_DIR)
 	$(CC) $(CC_FLAGS) -I$(INC_DIR) -I$(PRIV_INC_DIR) -I$(INC_DIR_LIBS) -c src/main_genetic.c -o $(OBJ_DIR)/main_genetic.o
 	$(LINKER) $(filter-out $(OBJ_DIR)/main.o, $(OBJS)) $(OBJ_DIR)/main_genetic.o -o $(BIN_DIR)/$(GENETIC_EXE) $(LINK_FLAGS)
-	@echo "\nCompilación finalizada\nUso: ./bin/main_genetic <network_conf.toml> <simulation_conf.toml>"
+	@echo "\nCompilación finalizada\nUso: ./bin/main_genetic <genotipos> <simulation_conf.toml>"
 
 network:
 	mkdir -p $(BIN_DIR)

@@ -56,52 +56,24 @@ static generator_conf_t *generate_network_conf_file(simulation_configuration_t *
     return gen_conf;
 }
 
-static int process_genotype(encoding_t *genotype, simulation_configuration_t *conf,
-                            GPU_dataset_t *cpu_dataset, size_t genotype_idx){
-
-    printf(" > > Processing genotype %zu ========== \n", genotype_idx);
-    fflush(stdout);
-
-    // build generator configuration from encoding + defaults
-    // TODO: quitar esta morralla
-    /*
-    // simulate
-    // TODO: estos no cambian no??
-    size_t n_batches = cpu_dataset->n_samples / conf->batch_size;
-    size_t r_samples = cpu_dataset->n_samples % conf->batch_size;
-    n_batches = r_samples > 0 ? n_batches + 1 : n_batches;
-
-    init_batch_snn(cpu_snn, conf); // TODO: entender funcionamiento
-
-    GPU_results_t **results = initialize_batch_results_array( // TODO: entender funcionamiento
-        conf, cpu_snn->n_neurons, conf->batch_size,
-        conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
-
-    for(size_t b = 0; b < n_batches; b++){
-        if((b+1) % 100 == 0){
-            printf(" Simulating batch %zu (genotype %zu)\n", b+1, genotype_idx);
-            fflush(stdout);
+// TODO: cambiar a futuro: comparar matrix con BOLD, o algo asi
+// fitness = num de spikes de todos los elementos de todos los batches
+static void calculate_fitness(encoding_t *genotype, GPU_results_t **results, size_t n_batches, size_t batch_size, size_t n_neurons) {
+    long total_spikes = 0;
+    for (size_t b = 0; b < n_batches; b++) {
+        size_t n_elements = (b == n_batches - 1) ? batch_size : batch_size;
+        for (size_t i = 0; i < n_elements * n_neurons; i++) {
+            total_spikes += results[b]->n_spks[i];
         }
-        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0); // TODO: entender funcionamiento
     }
+    genotype->fitness = (float)total_spikes;
+}
 
-    // store results
-    // TODO: no es necesario guardar resultados??
-    display_cluster_spike_matrices(results, n_batches, conf->time_steps);
-    store_number_of_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, n_batches);
-    store_generated_spikes_array(results, conf, cpu_snn->n_neurons, conf->batch_size, conf->time_steps, n_batches);
+// main.c, para el bucle de genotipos
+static int process_genotype(encoding_t *genotype, simulation_configuration_t *conf, GPU_dataset_t *cpu_dataset, size_t genotype_idx){
 
-    // cleanup per-genotype resources
-    free_topology_internals(&topology); // TODO: entender
-
-    for(size_t b = 0; b < n_batches; b++){
-        deallocate_results_str(results[b]);
-    }
-    free(results);
-
-    deallocate_snn_str(cpu_snn);
-    free(gconf);
-    */
+    //printf(" > > Processing genotype %zu ========== \n", genotype_idx);
+    //fflush(stdout);
 
     // CREAR NETWORK (LO QUE SE HACE EN SNN_GENERATOR_MAIN.C)
     generator_conf_t *gconf = generate_network_conf_file(conf, genotype); // gconf = fichero general de NETWORK
@@ -117,26 +89,70 @@ static int process_genotype(encoding_t *genotype, simulation_configuration_t *co
     deallocate_topology_str(topology);
     // printf(" > Network initialized!\n");
 
-    // TODO: irrelevante calcular batches no?? usar constantes
+    // preparacion para procesamiento de batches
+    // TODO: usar constantes en vez de calcular (remember todas_las_images.nii.gz)
     size_t n_batches = cpu_dataset->n_samples / conf->batch_size;
     size_t r_samples = cpu_dataset->n_samples % conf->batch_size;
     n_batches = r_samples > 0 ? n_batches + 1 : n_batches;
 
-    init_batch_snn(cpu_snn, conf); // TODO: entender funcionamiento
+    init_batch_snn(cpu_snn, conf);
 
-    GPU_results_t **results = initialize_batch_results_array( // TODO: entender funcionamiento
+    GPU_results_t **results = initialize_batch_results_array(
         conf, cpu_snn->n_neurons, conf->batch_size,
         conf->time_steps, 1, n_batches, cpu_snn->clusters_info);
 
     for(size_t b = 0; b < n_batches; b++){
+        /*
         if((b+1) % 100 == 0){
             printf(" Simulating batch %zu (genotype %zu)\n", b+1, genotype_idx);
             fflush(stdout);
         }
-        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0); // TODO: entender funcionamiento
+        */
+        simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0);
     }
 
+    calculate_fitness(genotype, results, n_batches, conf->batch_size, cpu_snn->n_neurons);
+    printf(">> >> Genotype %zu, fitness = %2f\n", genotype_idx, genotype->fitness);
+
     return 0;
+}
+
+// comparar fitness de dos genotipos
+static int compare_fitness_desc(const void *a, const void *b) {
+    const encoding_t *ea = (const encoding_t *)a;
+    const encoding_t *eb = (const encoding_t *)b;
+    return (ea->fitness < eb->fitness) - (ea->fitness > eb->fitness);
+}
+
+// ordena el array de genotipos y elige "n_best" mejores
+static void select_best_genotypes(encoding_t *genotypes, size_t n_genotypes, encoding_t *out, size_t n_best) {
+    qsort(genotypes, n_genotypes, sizeof(encoding_t), compare_fitness_desc);
+    for (size_t i = 0; i < n_best; i++) out[i] = genotypes[i];
+}
+
+// genera descendencia eligiendo aleatoriamente de un padre u otro
+static encoding_t crossover(encoding_t *p1, encoding_t *p2) {
+    encoding_t c;
+    c.n_neurons                  = rand() % 2 ? p1->n_neurons                  : p2->n_neurons;
+    c.n_input_neurons            = rand() % 2 ? p1->n_input_neurons            : p2->n_input_neurons;
+    c.n_neurons_medium           = rand() % 2 ? p1->n_neurons_medium           : p2->n_neurons_medium;
+    c.intra_medium_connectivity  = rand() % 2 ? p1->intra_medium_connectivity  : p2->intra_medium_connectivity;
+    c.n_clusters                 = rand() % 2 ? p1->n_clusters                 : p2->n_clusters;
+    c.intra_cluster_connectivity = rand() % 2 ? p1->intra_cluster_connectivity : p2->intra_cluster_connectivity;
+    c.inter_cluster_connectivity = rand() % 2 ? p1->inter_cluster_connectivity : p2->inter_cluster_connectivity;
+    c.fitness = 0.0f;
+    return c;
+}
+
+// cambia UNO de los valores (field) modificandolo en un rango DELTA
+static void mutate(encoding_t *g) {
+    int field = rand() % 3;
+    float delta = ((float)rand() / (float)RAND_MAX) * 0.2f - 0.1f;
+    switch (field) {
+        case 0: g->intra_medium_connectivity  = fmaxf(0.01f, fminf(1.0f, g->intra_medium_connectivity + delta)); break;
+        case 1: g->intra_cluster_connectivity = fmaxf(0.01f, fminf(1.0f, g->intra_cluster_connectivity + delta)); break;
+        case 2: g->inter_cluster_connectivity = fmaxf(0.01f, fminf(1.0f, g->inter_cluster_connectivity + delta)); break;
+    }
 }
 
 /* MAIN */
@@ -182,34 +198,54 @@ int main(int argc, char *argv[]) {
     }
     printf(" > Genotypes read!\n");
 
-    // process genotypes
-    printf("Processing genotypes\n");
-    for(size_t i = 0; i < n_genotypes; i++){
-        
-        int ret = process_genotype(&genotypes[i], conf, cpu_dataset, i);
+    // bucle principal
+    printf("Entering genetic algorithm\n");
 
-        if(ret != 0) {
-            printf("Error processing genotype %zu, skipping\n", i);
+    size_t n_best = 5;
+    encoding_t *best_genotypes = malloc(n_best * sizeof(encoding_t));
+    encoding_t *new_genotypes  = malloc(n_genotypes * sizeof(encoding_t));
+
+    // procesar 100 veces o hasta que se cumpla alguna condición
+    // TODO crear variable para condicion del for/while
+    for(size_t gen = 0; gen < 10; gen++) {
+
+        printf("\n >> Entering iteration %zu\n", gen);
+
+        // procesar todos los genotipos del array genotypes -> calcular fitness
+        for(size_t j = 0; j < n_genotypes; j++){
+            process_genotype(&genotypes[j], conf, cpu_dataset, j);
         }
-    }
 
-    /*
-    // iterate over all genotypes in the file
-    printf(" ============================= \n Processing genotypes from '%s'\n ============================= \n", argv[1]);
-    for(size_t i = 0; ; i++){
+        // mejores 5 (n_best) genotipos
+        select_best_genotypes(genotypes, n_genotypes, best_genotypes, n_best);
 
-        encoding_t *enc = decode_to_snn(argv[1], i);
-        if(!enc) break; // no more lines
-
-        int ret = process_genotype(enc, conf, cpu_dataset, i);
-        free(enc);
-
-        if(ret != 0){
-            printf(" > Error processing genotype %zu, skipping.\n", i);
-            fflush(stdout);
+        // nuevos genotipos: best + descendencia de best mutada
+        for(size_t j = 0; j < n_best; j++) new_genotypes[j] = best_genotypes[j];
+        for(size_t j = n_best; j < n_genotypes; j++) {
+            encoding_t *p1 = &best_genotypes[rand() % n_best];
+            encoding_t *p2 = &best_genotypes[rand() % n_best];
+            new_genotypes[j] = crossover(p1, p2);
+            mutate(&new_genotypes[j]);
         }
+
+        encoding_t *tmp = genotypes;
+        genotypes = new_genotypes;
+        new_genotypes = tmp;
     }
-        */
+    free(best_genotypes);
+    free(new_genotypes);
+
+    printf("\n=== Final genotypes ===\n");
+    for(size_t j = 0; j < n_genotypes; j++){
+        printf("  #%zu: fitness=%.0f | n_neur=%zu n_in=%zu n_med=%zu n_clust=%zu"
+               " | intra_med=%.2f intra_clust=%.2f inter_clust=%.2f\n",
+               j, new_genotypes[j].fitness,
+               new_genotypes[j].n_neurons, genotypes[j].n_input_neurons,
+               new_genotypes[j].n_neurons_medium, genotypes[j].n_clusters,
+               new_genotypes[j].intra_medium_connectivity,
+               new_genotypes[j].intra_cluster_connectivity,
+               new_genotypes[j].inter_cluster_connectivity); // new_genotypes porque al final del bucle: new_genotypes = tmp (viejos)
+    }
 
     // cleanup shared resources
     deallocate_dataset_str(cpu_dataset);
