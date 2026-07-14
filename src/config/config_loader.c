@@ -76,7 +76,7 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
 simulation_configuration_t* load_simulation_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
 
     // [simulation] section
-    toml_value_t time_steps, max_spikes, max_input_spikes;
+    toml_value_t time_steps, max_spikes, max_input_spikes, x, y, z;
 
     /* read [simulation] section */
     time_steps = toml_table_int(tbl, "time_steps"); // simulation time steps
@@ -94,6 +94,10 @@ simulation_configuration_t* load_simulation_section_from_toml(simulation_configu
     // load information in configuration struct
     conf->time_steps       = (size_t)time_steps.u.i;
     conf->max_input_spikes = (size_t)max_input_spikes.u.i;
+
+    conf->x = toml_table_int(tbl, "x").u.i;
+    conf->y = toml_table_int(tbl, "y").u.i;
+    conf->z = toml_table_int(tbl, "z").u.i;
 
     return conf;
 }
@@ -330,46 +334,6 @@ simulation_configuration_t* load_network_section_from_toml(simulation_configurat
 }
 
 
-
-simulation_configuration_t* load_parcellation_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
-
-    toml_value_t enabled, parc_file, bold_file, parcel_topology;
-
-    if (!tbl) {
-        conf->enable_parcellation = 0;
-        conf->parcel_topology = 0;
-        conf->parcellation_file = NULL;
-        conf->parcel_bold_file = NULL;
-        return conf;
-    }
-
-    enabled         = toml_table_bool(tbl, "enabled");
-    parc_file       = toml_table_string(tbl, "parcellation_file");
-    bold_file       = toml_table_string(tbl, "parcel_bold_file");
-    parcel_topology = toml_table_bool(tbl, "parcel_topology");
-
-    if (!enabled.ok)          enabled.u.i = 0;
-    if (!parcel_topology.ok)  parcel_topology.u.i = enabled.u.i;
-
-    if (enabled.u.i) {
-        if (!parc_file.ok) {
-            printf(" >> [parcellation] parcellation_file required when enabled!\n");
-            exit(1);
-        }
-        if (!bold_file.ok) {
-            printf(" >> [parcellation] parcel_bold_file required when enabled!\n");
-            exit(1);
-        }
-    }
-
-    conf->enable_parcellation = enabled.u.i;
-    conf->parcel_topology     = parcel_topology.u.i;
-    conf->parcellation_file   = parc_file.ok ? strdup(parc_file.u.s) : NULL;
-    conf->parcel_bold_file    = bold_file.ok ? strdup(bold_file.u.s) : NULL;
-
-    return conf;
-}
-
 /* [PUBLIC] */
 
 simulation_configuration_t* load_configuration_params_from_toml(const char *file_name){
@@ -377,10 +341,10 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     FILE *f = NULL;
     char errbuf[1000];
     int l_file_names = 300;
-    simulation_configuration_t *conf = (simulation_configuration_t*)malloc(sizeof(simulation_configuration_t));
+    simulation_configuration_t *conf = (simulation_configuration_t*)calloc(1, sizeof(simulation_configuration_t));
 
     // define tables and variables to store data from configuration file (toml format)
-    toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_dataset, *tbl_output, *tbl_network;
+    toml_table_t *tbl, *tbl_general, *tbl_simulation, *tbl_dataset, *tbl_output, *tbl_network, *tbl_clusters;
     
     // open configuration file and convert to TOML structure
     open_file(&f, file_name);
@@ -394,7 +358,7 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     tbl_dataset = toml_table_table(tbl, "dataset");
     tbl_output = toml_table_table(tbl, "output");
     tbl_network = toml_table_table(tbl, "network");
-    toml_table_t *tbl_parcellation = toml_table_table(tbl, "parcellation");
+    tbl_clusters = toml_table_table(tbl, "clusters");
 
     // load sections
     conf = load_general_section_from_toml(conf, tbl_general);
@@ -402,7 +366,6 @@ simulation_configuration_t* load_configuration_params_from_toml(const char *file
     conf = load_dataset_section_from_toml(conf, tbl_dataset);
     conf = load_output_section_from_toml(conf, tbl_output);
     conf = load_network_section_from_toml(conf, tbl_network);
-    conf = load_parcellation_section_from_toml(conf, tbl_parcellation);
     
     // return configuration struct
     return conf;

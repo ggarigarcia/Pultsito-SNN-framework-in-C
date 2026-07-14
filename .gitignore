@@ -79,3 +79,4 @@ dkms.conf
 AGENTS.md
 todo
 test/
+run_genetic.sh

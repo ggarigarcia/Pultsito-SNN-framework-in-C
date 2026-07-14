@@ -20,6 +20,7 @@ typedef struct simulation_configuration_t {
     int load_dataset; // 0: dataset file provided;  1: generate the dataset from file data;  2: do not generate the dataset  [opt]: 0
     size_t n_neurons; // total neurons (for topology generation) [opt]: 0
     size_t n_neurons_medium; // medium-layer neurons in clustered topology [opt]: 0
+    int x, y, z;
 
     // [simulation] data
     size_t time_steps; // time steps of the simulations

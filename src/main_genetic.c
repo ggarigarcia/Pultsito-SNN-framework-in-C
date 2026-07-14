@@ -51,26 +51,55 @@ static generator_conf_t *generate_network_conf_file(simulation_configuration_t *
     gen_conf->input_medium_ratio = 5;
     gen_conf->medium_cluster_ratio = 5;
     gen_conf->store_in_file = 0;
+    gen_conf->x = conf->x;
+    gen_conf->y = conf->y;
+    gen_conf->z = conf->z;
     
-
     return gen_conf;
 }
 
-// TODO: cambiar a futuro: comparar matrix con BOLD, o algo asi
-// fitness = num de spikes de todos los elementos de todos los batches
-static void calculate_fitness(encoding_t *genotype, GPU_results_t **results, size_t n_batches, size_t batch_size, size_t n_neurons) {
-    long total_spikes = 0;
+static float pearson(const float *x, const float *y, size_t n) {
+    float mx = 0, my = 0;
+    for (size_t i = 0; i < n; i++) { mx += x[i]; my += y[i]; }
+    mx /= n; my /= n;
+    float num = 0, dx = 0, dy = 0;
+    for (size_t i = 0; i < n; i++) {
+        float a = x[i] - mx, b = y[i] - my;
+        num += a * b;
+        dx  += a * a;
+        dy  += b * b;
+    }
+    float den = sqrtf(dx * dy);
+    return (den > 1e-10f) ? num / den : 0.0f;
+}
+
+static void calculate_fitness(encoding_t *genotype, GPU_results_t **results, size_t n_batches, size_t batch_size, size_t n_neurons, float *bold_values) {
+    
+    // info necesaria para obtener valores postprocesados
+    size_t B = batch_size;
+    size_t nc = results[0]->matrix_t->n_clusters;
+    size_t T = results[0]->matrix_t->n_timesteps;
+    float *spike_ts = malloc(T * sizeof(float));
+    float *bold_ts  = malloc(T * sizeof(float));
+    float total_r = 0.0f;
+
     for (size_t b = 0; b < n_batches; b++) {
-        size_t n_elements = (b == n_batches - 1) ? batch_size : batch_size;
-        for (size_t i = 0; i < n_elements * n_neurons; i++) {
-            total_spikes += results[b]->n_spks[i];
+        for (size_t c = 0; c < nc; c++) {
+            for (size_t t = 0; t < T; t++) {
+                spike_ts[t] = (float)results[b]->matrix_t->matrix[t * nc * B + c * B + 0];
+                bold_ts[t]  = bold_values[t * nc + c];
+            }
+            total_r += pearson(spike_ts, bold_ts, T);
         }
     }
-    genotype->fitness = (float)total_spikes;
+
+    free(spike_ts);
+    free(bold_ts);
+    genotype->fitness = total_r;
 }
 
 // main.c, para el bucle de genotipos
-static int process_genotype(encoding_t *genotype, simulation_configuration_t *conf, GPU_dataset_t *cpu_dataset, size_t genotype_idx){
+static int process_genotype(encoding_t *genotype, simulation_configuration_t *conf, GPU_dataset_t *cpu_dataset, float *bold_values, size_t genotype_idx){
 
     //printf(" > > Processing genotype %zu ========== \n", genotype_idx);
     //fflush(stdout);
@@ -111,8 +140,12 @@ static int process_genotype(encoding_t *genotype, simulation_configuration_t *co
         simulate_batch_CPU(cpu_snn, cpu_dataset, conf, results[b], b, 0);
     }
 
-    calculate_fitness(genotype, results, n_batches, conf->batch_size, cpu_snn->n_neurons);
+    calculate_fitness(genotype, results, n_batches, conf->batch_size, cpu_snn->n_neurons, bold_values);
     printf(">> >> Genotype %zu, fitness = %2f\n", genotype_idx, genotype->fitness);
+
+    free(gconf);
+    free(results);
+    free(cpu_snn);
 
     return 0;
 }
@@ -134,10 +167,10 @@ static void select_best_genotypes(encoding_t *genotypes, size_t n_genotypes, enc
 static encoding_t crossover(encoding_t *p1, encoding_t *p2) {
     encoding_t c;
     c.n_neurons                  = rand() % 2 ? p1->n_neurons                  : p2->n_neurons;
-    c.n_input_neurons            = rand() % 2 ? p1->n_input_neurons            : p2->n_input_neurons;
+    c.n_input_neurons            = p1->n_input_neurons; // beti berdina
     c.n_neurons_medium           = rand() % 2 ? p1->n_neurons_medium           : p2->n_neurons_medium;
     c.intra_medium_connectivity  = rand() % 2 ? p1->intra_medium_connectivity  : p2->intra_medium_connectivity;
-    c.n_clusters                 = rand() % 2 ? p1->n_clusters                 : p2->n_clusters;
+    c.n_clusters                 = p1->n_clusters; // beti berdina
     c.intra_cluster_connectivity = rand() % 2 ? p1->intra_cluster_connectivity : p2->intra_cluster_connectivity;
     c.inter_cluster_connectivity = rand() % 2 ? p1->inter_cluster_connectivity : p2->inter_cluster_connectivity;
     c.fitness = 0.0f;
@@ -145,13 +178,28 @@ static encoding_t crossover(encoding_t *p1, encoding_t *p2) {
 }
 
 // cambia UNO de los valores (field) modificandolo en un rango DELTA
+// TODO guztiak aldatu
 static void mutate(encoding_t *g) {
-    int field = rand() % 3;
+
+    int field = rand() % 5;
     float delta = ((float)rand() / (float)RAND_MAX) * 0.2f - 0.1f;
+
     switch (field) {
         case 0: g->intra_medium_connectivity  = fmaxf(0.01f, fminf(1.0f, g->intra_medium_connectivity + delta)); break;
         case 1: g->intra_cluster_connectivity = fmaxf(0.01f, fminf(1.0f, g->intra_cluster_connectivity + delta)); break;
         case 2: g->inter_cluster_connectivity = fmaxf(0.01f, fminf(1.0f, g->inter_cluster_connectivity + delta)); break;
+        case 3: {
+            int v = (int)g->n_neurons + (rand() % 11 - 5); // valor random
+            if (v < 5) v = 5; // minimo / suelo
+            g->n_neurons = (size_t)v;
+            break;
+        }
+        case 4: {
+            int v = (int)g->n_neurons_medium + (rand() % 5 - 2); // valor random
+            if (v < 1) v = 1; // minimo / suelo
+            g->n_neurons_medium = (size_t)v;
+            break;
+        }
     }
 }
 
@@ -185,6 +233,28 @@ int main(int argc, char *argv[]) {
     printf(" > Dataset loaded!\n");
     fflush(stdout);
 
+    // ! PROVISIONAL: leer valores BOLD generados del script python
+    printf("Opening gifti results file\n");
+    size_t n_voxels = conf->x * conf->y * conf->z;
+    size_t n_timepoints = 135;
+    float *bold_values = malloc(n_voxels * n_timepoints * sizeof(float));
+    FILE *bold_file = fopen("test/datasets/bold_sumas_sub-S042_ses-001_task-prf_run-01_3x2x2.txt", "r");
+    if(!bold_file){
+        printf(" > Error opening BOLD file! Exiting.\n");
+        fflush(stdout);
+        free(conf);
+        return 1;
+    }
+    for(size_t t = 0; t < n_timepoints; t++){
+        for(size_t v = 0; v < n_voxels; v++){
+            fscanf(bold_file, "%f", &bold_values[t * n_voxels + v]);
+        }
+    }
+    fclose(bold_file);
+    printf(" > BOLD file loaded (%zu voxels x %zu timepoints)\n", n_voxels, n_timepoints);
+    fflush(stdout);
+
+
     // load genotypes
     printf("Reading genotypes from file %s", argv[1]);
     size_t n_genotypes;
@@ -198,57 +268,63 @@ int main(int argc, char *argv[]) {
     }
     printf(" > Genotypes read!\n");
 
-    // bucle principal
-    printf("Entering genetic algorithm\n");
 
-    size_t n_best = 5;
+    // ** BUCLE PRINCIPAL **
+    // prerrequisitos
+    printf("Entering genetic algorithm\n");
+    size_t n_best = 5; // TODO cambiar: poner en conf or smth
     encoding_t *best_genotypes = malloc(n_best * sizeof(encoding_t));
     encoding_t *new_genotypes  = malloc(n_genotypes * sizeof(encoding_t));
 
-    // procesar 100 veces o hasta que se cumpla alguna condición
-    // TODO crear variable para condicion del for/while
-    for(size_t gen = 0; gen < 10; gen++) {
+    
+    for(size_t gen = 0; gen < 100; gen++) { // TODO cambiar condicion del loop
 
         printf("\n >> Entering iteration %zu\n", gen);
 
         // procesar todos los genotipos del array genotypes -> calcular fitness
         for(size_t j = 0; j < n_genotypes; j++){
-            process_genotype(&genotypes[j], conf, cpu_dataset, j);
+            process_genotype(&genotypes[j], conf, cpu_dataset, bold_values, j);
         }
 
-        // mejores 5 (n_best) genotipos
+        // mejores "n_best" genotipos
         select_best_genotypes(genotypes, n_genotypes, best_genotypes, n_best);
 
         // nuevos genotipos: best + descendencia de best mutada
-        for(size_t j = 0; j < n_best; j++) new_genotypes[j] = best_genotypes[j];
+        for(size_t j = 0; j < n_best; j++) genotypes[j] = best_genotypes[j];
         for(size_t j = n_best; j < n_genotypes; j++) {
             encoding_t *p1 = &best_genotypes[rand() % n_best];
             encoding_t *p2 = &best_genotypes[rand() % n_best];
-            new_genotypes[j] = crossover(p1, p2);
-            mutate(&new_genotypes[j]);
+            genotypes[j] = crossover(p1, p2);
+            mutate(&genotypes[j]);
         }
 
+        /*
         encoding_t *tmp = genotypes;
         genotypes = new_genotypes;
         new_genotypes = tmp;
+        */
     }
     free(best_genotypes);
-    free(new_genotypes);
+    //free(new_genotypes);
 
+    /*
+    // TODO: calcular fitness fuera del bucle
     printf("\n=== Final genotypes ===\n");
     for(size_t j = 0; j < n_genotypes; j++){
         printf("  #%zu: fitness=%.0f | n_neur=%zu n_in=%zu n_med=%zu n_clust=%zu"
                " | intra_med=%.2f intra_clust=%.2f inter_clust=%.2f\n",
-               j, new_genotypes[j].fitness,
-               new_genotypes[j].n_neurons, genotypes[j].n_input_neurons,
-               new_genotypes[j].n_neurons_medium, genotypes[j].n_clusters,
-               new_genotypes[j].intra_medium_connectivity,
-               new_genotypes[j].intra_cluster_connectivity,
-               new_genotypes[j].inter_cluster_connectivity); // new_genotypes porque al final del bucle: new_genotypes = tmp (viejos)
+               j, genotypes[j].fitness,
+               genotypes[j].n_neurons, genotypes[j].n_input_neurons,
+               genotypes[j].n_neurons_medium, genotypes[j].n_clusters,
+               genotypes[j].intra_medium_connectivity,
+               genotypes[j].intra_cluster_connectivity,
+               genotypes[j].inter_cluster_connectivity); // en verdad son los antepenultimos, habria que calcular el fitness de los ultimos fuera
     }
+               */
 
     // cleanup shared resources
     deallocate_dataset_str(cpu_dataset);
+    free(bold_values);
     free(conf);
 
     printf("\n > All genotypes processed!\n");

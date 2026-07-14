@@ -122,6 +122,7 @@ typedef struct generator_conf_t {
     float inter_cluster_connectivity;
     size_t input_medium_ratio;
     size_t medium_cluster_ratio;
+    size_t x, y, z; // division de clusters
 
     // parcel-based topology
     int parcel_topology;            ///< flag: distribute clusters proportionally

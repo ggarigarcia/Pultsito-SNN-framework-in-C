@@ -1121,8 +1121,8 @@ topology_t generate_clustered_topology(generator_conf_t *conf) {
 
 
     // 1.2 CLUSTERRAK sortu
-    clusters_info->n_clusters = conf->n_clusters;
     clusters_info->parcel_weights = NULL;
+    clusters_info->n_clusters = conf->x * conf->y * conf->z;
 
     clusters_info->n_neurons_cluster = n_neurons - clusters_info->n_neurons_medium;
     create_clusters(clusters_info);
@@ -1595,7 +1595,7 @@ void deallocate_topology_str(topology_t* topology){
     for(size_t i = 0; i<topology->n_neurons; i++){
 
         if(topology->input_neurons_per_neuron && topology->input_neurons_per_neuron[i]) free(topology->input_neurons_per_neuron[i]);
-        if(topology->output_neurons_per_neuron && topology->output_neurons_per_neuron[i]) free(topology->input_neurons_per_neuron[i]);
+        //if(topology->output_neurons_per_neuron && topology->output_neurons_per_neuron[i]) free(topology->input_neurons_per_neuron[i]);
     }
     if(topology->input_neurons_per_neuron) free(topology->input_neurons_per_neuron);
     if(topology->output_neurons_per_neuron) free(topology->output_neurons_per_neuron);
