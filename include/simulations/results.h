@@ -48,6 +48,10 @@ typedef struct GPU_results_t {
     // * matriz de spikes
     cluster_spk_buffer_t *matrix_t;
 
+    // * cluster activation matrix (1 if cluster is activated at timestep, 0 otherwise)
+    // dimensions: [n_timesteps * n_clusters * batch_size]
+    char *cluster_activated;
+
 } GPU_results_t;
 
 

@@ -74,6 +74,9 @@ GPU_results_t* initialize_batch_results_cpu(simulation_configuration_t *conf, si
     results->matrix_t->matrix = calloc(results->matrix_t->n_timesteps * results->matrix_t->n_clusters * batch_size, sizeof(int));
     results->matrix_t->cumulative = calloc(results->matrix_t->n_clusters * batch_size, sizeof(int));
 
+    // allocate cluster activation matrix
+    results->cluster_activated = calloc(results->matrix_t->n_timesteps * results->matrix_t->n_clusters * batch_size, sizeof(char));
+
     // return results structure
     return results;
 }
@@ -117,6 +120,7 @@ void reinitialize_batch_results_cpu(GPU_results_t *results, simulation_configura
         for(size_t i = 0; i < n_cum; i++) results->matrix_t->cumulative[i] = 0;
         size_t n = results->matrix_t->n_timesteps * results->matrix_t->n_clusters * bs;
         for(size_t i = 0; i < n; i++) results->matrix_t->matrix[i] = 0;
+        for(size_t i = 0; i < n; i++) results->cluster_activated[i] = 0;
     }
 }
 
@@ -204,6 +208,9 @@ void deallocate_results_str(GPU_results_t *results){
         free(results->matrix_t->neuron_to_cluster);
         free(results->matrix_t);
     }
+
+    if(results->cluster_activated)
+        free(results->cluster_activated);
 
     if(results)
         free(results);

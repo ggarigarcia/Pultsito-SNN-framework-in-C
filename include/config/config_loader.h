@@ -25,6 +25,7 @@ typedef struct simulation_configuration_t {
     // [simulation] data
     size_t time_steps; // time steps of the simulations
     size_t max_input_spikes; // maximum number of spikes in a input spike train // TODO: check wether necessary [opt]: = time_steps
+    size_t cluster_threshold; // percentage (1-100) of neurons that must fire to activate a cluster [opt]: 100
 
     // [dataset] data
     char *dataset; // path to the file that contains the dataset

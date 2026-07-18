@@ -10,6 +10,7 @@
 #include "simulations/simulations.h"
 #include "simulations/results.h"
 #include "networks/snn.h"
+#include "networks/snn_generator.h" // clusters_info_t
 #include "datasets/datasets.h"
 #include "config/config_loader.h"
 #include "training_rules/stdp.h"
@@ -172,6 +173,21 @@ void simulate_batch_CPU(GPU_SNN_t *snn, GPU_dataset_t *dataset, simulation_confi
 
         // update circular buffer head position
         results->matrix_t->current_step = t % results->matrix_t->n_timesteps;
+
+        // compute cluster activation based on threshold
+        if(snn->clusters_info){
+            size_t n_cl = results->matrix_t->n_clusters;
+            size_t cs = results->matrix_t->current_step;
+            size_t thresh = conf->cluster_threshold;
+            for(size_t c = 0; c < n_cl; c++){ // iterar sobre clusters
+                size_t cluster_size = snn->clusters_info->cluster_sizes[c];
+                size_t required = (cluster_size * thresh + 99) / 100; // portzentaia kalkulatu
+                for(size_t b2 = 0; b2 < B; b2++){ // iterar sobre elementos del batch
+                    int spikes = results->matrix_t->matrix[cs * n_cl * B + c * B + b2];
+                    results->cluster_activated[cs * n_cl * B + c * B + b2] = (spikes >= (int)required) ? 1 : 0;
+                }
+            }
+        }
 
         /* simulation step 3.5: compute learning rule */
         clock_gettime(CLOCK_MONOTONIC, &start_step5);

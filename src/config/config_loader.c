@@ -76,11 +76,12 @@ simulation_configuration_t* load_general_section_from_toml(simulation_configurat
 simulation_configuration_t* load_simulation_section_from_toml(simulation_configuration_t *conf, toml_table_t *tbl){
 
     // [simulation] section
-    toml_value_t time_steps, max_spikes, max_input_spikes, x, y, z;
+    toml_value_t time_steps, max_spikes, max_input_spikes, cluster_threshold, x, y, z;
 
     /* read [simulation] section */
     time_steps = toml_table_int(tbl, "time_steps"); // simulation time steps
     max_input_spikes = toml_table_int(tbl, "max_input_spikes"); // length for input and output neurons
+    cluster_threshold = toml_table_int(tbl, "cluster_threshold"); // percentage of neurons to activate cluster
 
     if(!time_steps.ok){
 
@@ -90,10 +91,13 @@ simulation_configuration_t* load_simulation_section_from_toml(simulation_configu
     }
     if(!max_input_spikes.ok)
         max_input_spikes.u.i = time_steps.u.i;
+    if(!cluster_threshold.ok)
+        cluster_threshold.u.i = 50; // default: all neurons must fire
 
     // load information in configuration struct
     conf->time_steps       = (size_t)time_steps.u.i;
     conf->max_input_spikes = (size_t)max_input_spikes.u.i;
+    conf->cluster_threshold = (size_t)cluster_threshold.u.i;
 
     conf->x = toml_table_int(tbl, "x").u.i;
     conf->y = toml_table_int(tbl, "y").u.i;

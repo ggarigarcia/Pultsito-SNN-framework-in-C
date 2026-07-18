@@ -22,6 +22,7 @@ static void free_topology_internals(topology_t *topology){
 }
 
 // crear fichero de config de network (usado en snn_generator_main.c) a partir de genotipo
+// TODO: chequear validez de valores default
 static generator_conf_t *generate_network_conf_file(simulation_configuration_t *conf, encoding_t *enc) {
 
     generator_conf_t *gen_conf = (generator_conf_t*)calloc(1, sizeof(generator_conf_t));
@@ -72,6 +73,7 @@ static float pearson(const float *x, const float *y, size_t n) {
     float den = sqrtf(dx * dy);
     return (den > 1e-10f) ? num / den : 0.0f;
 }
+
 
 static void calculate_fitness(encoding_t *genotype, GPU_results_t **results, size_t n_batches, size_t batch_size, size_t n_neurons, float *bold_values) {
     
